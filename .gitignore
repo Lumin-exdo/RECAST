@@ -9,3 +9,10 @@ runs_t2_preview/
 *.json.tmp
 models/
 .cache/
+
+# secrets
+.env
+*.env
+.env.local
+secrets.py
+
