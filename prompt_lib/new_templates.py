@@ -1,38 +1,49 @@
-STATEMENT_EXTRACTOR_PROMPT = """Extract factual current-state claims about the USER from the provided conversation turns.
+STATEMENT_EXTRACTOR_PROMPT = """Extract information about the USER from the provided conversation turns that would still matter if someone asked about this user in the future.
 
-Only extract statements that:
-- Describe the user's current real-world state (location, job, relationships, health, habits, living situation, etc.)
-- Are stated as current facts, not hypotheticals, desires, or past events with no present relevance
-- Are the user's own statements (not assistant responses)
+The core question for each candidate statement: "If I needed to answer a question about this user's life next week or next year, would this information be relevant?"
+
+Extract if YES — keep if it falls into any of these four categories:
+1. CURRENT STATE: what is currently true about the user right now
+   (where they live, who they're with, what job they have, their health status)
+   INCLUDES: environmental conditions the user is currently in, when their own actions imply it
+   (digging out a parka / icy windshield → currently in cold/freezing weather;
+    setting up fans everywhere → currently in a heatwave; buying rain boots → rainy climate now)
+2. RECENT CHANGE: a past event whose result is still in effect now
+   (quit a job last week → currently unemployed; had a baby last month → currently a parent;
+    signed a lease → currently living somewhere new; got a dog → currently has a dog;
+    met with a mediator for co-parenting → relationship has ended; completed RCIA → religious conversion)
+3. BIOGRAPHICAL BACKGROUND: stable facts about who this person is
+   (grew up somewhere, has a degree, has children, native language)
+4. LASTING PREFERENCE OR HABIT: recurring patterns, values, constraints
+   (doesn't eat meat, wakes up early, dislikes crowded places, exercises daily)
 
 Do NOT extract:
-- Pure requests or questions
-- Statements about external world facts unrelated to the user's personal state
-- Purely hypothetical sentences ("if I...", "what if...")
-- Pure future intentions not yet realized ("I'm planning to...", "I want to...")
-- Emotional reactions without factual content ("I'm feeling stressed about work")
-- Generic conversational filler
+- One-time events with no lasting consequence ("went to the cinema last weekend", "had lunch with a colleague")
+- Pure requests, questions, or task instructions
+- Hypotheticals and wishes ("if I were to...", "I wish...")
+- Emotional reactions without a factual claim ("I'm so stressed today")
+- Generic filler with no personal state content
+- Facts about the external world unrelated to the user's own situation
 
 Output JSON only:
 {
   "statements": [
     {
       "text": "exact relevant clause from user message",
-      "temporal_scope": "current|past|future",
+      "category": "current_state|recent_change|biographical|lasting_preference",
       "is_definite": true
     }
   ]
 }
 
 Rules:
-- temporal_scope=current: describes ongoing or recently established state still in effect now
-- temporal_scope=past: describes something that ended before now
-- temporal_scope=future: describes something not yet happened
-- is_definite=true: stated as fact, not speculation
-- is_definite=false: uncertain, speculative, or hedged
-- Only current + definite statements are relevant for memory
-- Keep the text minimal but semantically complete (enough to understand the claim without the surrounding conversation)
-- If no relevant statements exist in the session, return {"statements": []}
+- is_definite=true: asserted as fact, not speculation or hedging
+- is_definite=false: uncertain, speculative ("I think", "maybe", "probably")
+- Only is_definite=true statements are stored in memory
+- Tense alone does NOT determine whether to extract. A past-tense sentence that describes a
+  currently ongoing condition should be extracted as category=recent_change.
+- Extract the minimal clause that conveys the meaningful personal fact
+- If nothing qualifies, return {"statements": []}
 """
 
 
@@ -85,37 +96,53 @@ Rules:
 """
 
 
-IMPACT_HYPOTHESIS_PROMPT = """Generate hypothetical memory search queries based on what might be INVALIDATED by this user statement.
+IMPACT_HYPOTHESIS_PROMPT = """You are a detective trying to figure out what has CHANGED in this user's life.
 
-Statement: {statement}
+New statement: {statement}
 
 Current user profile summary:
 {global_impression}
 
-Think: if this statement is true, what aspects of the user's life that we might have stored in memory could now be outdated?
-Generate search queries that would find those potentially-outdated memory entries.
+Your task — two steps:
+
+STEP 1 — REASON FIRST (do not output this):
+Ask yourself: if this statement is true, what does it IMPLY about the user's current reality?
+Chain your reasoning outward. Think about:
+- Physical environment: where must the user be? what can they access? what's impossible where they are?
+- Legal/administrative status: what paperwork, rights, or obligations does this situation imply?
+- Relationship/social structure: who is in or out of the user's life now?
+- Financial/occupational reality: what income, schedule, or constraints does this imply?
+- Physical capability: what can or can't the user do physically given this situation?
+Then ask: what PREVIOUSLY STORED beliefs about this user would CONFLICT with that implied reality?
+
+STEP 2 — OUTPUT hypotheses: things that USED TO BE TRUE but are now probably wrong.
+Each hypothesis is a candidate memory to search for and check.
 
 Output JSON only:
 {
   "hypothetical_impacts": [
-    "short statement describing what might now be outdated or false"
+    "short statement describing what used to be true about the user but might now be outdated"
   ]
 }
 
 Rules:
-- Generate 2-5 impact hypotheses
-- Each hypothesis should be a factual-sounding statement about what USED TO BE TRUE but might not be anymore
-- Use the profile summary to make hypotheses specific to this user's known situation
-- Think beyond direct semantic overlap — consider downstream implications:
-  - Location change → commute habits, daily routines, local services, social circle
-  - Job change → income level, daily schedule, professional identity, commute
-  - Relationship change → living situation, weekend activities, future plans
-  - Health change → physical activities, daily routine, work capacity
-- If profile is empty, generate generic hypotheses based on common personal facts
-- Examples of good hypotheses:
-  - "user lives in [city X]" (if statement implies relocation)
-  - "user is single/has no romantic partner" (if statement mentions a partner)
-  - "user works at [company X]" (if statement implies job change)
+- Generate 4-8 hypotheses. More is better. Being wrong is fine — the next step will verify.
+- MANDATORY: include at least 2 non-obvious, multi-hop hypotheses. Surface-only is not enough.
+  Bad (surface): "user recently changed jobs"
+  Good (multi-hop): "user is not required to hold US citizenship or pass a security clearance"
+  Bad (surface): "user went to a religious event"
+  Good (multi-hop): "user identifies as [previous religion]" or "user is not a practicing Catholic"
+- Hypotheses must be PAST-TENSE BELIEFS ("user used to X", "user was X", "user had X").
+  NOT current observations. NOT future plans. Only things that might now be OUTDATED.
+- Generate competing, contradictory hypotheses freely — they don't need to be consistent.
+- Use the profile summary to target specific stored facts.
+  If summary mentions Portland and the statement implies desert heat → generate "user lives in Portland".
+  If summary mentions "permanent resident" and statement implies federal employment → generate "user is comfortable staying a permanent resident / not pursuing citizenship".
+- Think about SYSTEMIC CONSEQUENCES, not just the immediate event:
+  co-parenting mediation → the relationship that produced the child has ended → "user is in a committed relationship" is now wrong
+  federal job offer → federal jobs require security clearance → clearance requires citizenship → "user is not pursuing citizenship" is now wrong
+  removing a hedge → the sound barrier it provided is gone → "noise from highway is blocked by vegetation" is now wrong
+  parka from back of closet → cold climate → contradicts any stored belief about warm/humid climate
 """
 
 
