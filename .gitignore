@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.claude/
+runs/
+runs_new_mem/
+runs_new_mem_relonly/
+runs_t2_preview/
+*.json.tmp
+models/
+.cache/
