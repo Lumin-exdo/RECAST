@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
 
@@ -109,6 +110,19 @@ class SampleRunnerMixin:
                 }
             )
 
+        # ── Pre-scan: extract+filter all sessions in parallel (no memory state) ──
+        # prescan[idx] = list of factual statements, or None if error (→ full extraction)
+        prescan: Dict[int, Any] = {}
+        if indices:
+            with ThreadPoolExecutor(max_workers=min(len(indices), 16)) as ex:
+                futures = {ex.submit(self.prescan_session, sessions[idx]): idx for idx in indices}
+                for fut in futures:
+                    idx = futures[fut]
+                    try:
+                        prescan[idx] = fut.result()
+                    except Exception:
+                        prescan[idx] = None
+
         for idx in indices:
             session = sessions[idx]
             session_time = timestamps[idx] if idx < len(timestamps) else ""
@@ -117,6 +131,7 @@ class SampleRunnerMixin:
                 session=session,
                 session_index=idx,
                 session_time=session_time,
+                precomputed_factual=prescan.get(idx),
             )
             session_elapsed_seconds = time.perf_counter() - session_started_at
             session_log["elapsed_seconds"] = round(session_elapsed_seconds, 3)

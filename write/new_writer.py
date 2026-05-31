@@ -387,31 +387,67 @@ class NewSessionWriterMixin:
         )
         self.store.update_global_impression(new_impression)
 
+    def prescan_session(
+        self,
+        session: List[Dict[str, Any]],
+        *,
+        max_workers: int = 16,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Extract + filter statements for one session without touching memory state.
+        Returns list of FACTUAL statements, or None on error (triggers full re-extraction).
+        Safe to call concurrently across sessions."""
+        try:
+            session_text = self._session_to_user_text(session)
+            if not session_text.strip():
+                return []
+            statements = self._extract_statements(session_text)
+            if not statements:
+                return []
+            n = len(statements)
+            if n > 1:
+                with ThreadPoolExecutor(max_workers=min(n, max_workers)) as ex:
+                    filter_results = list(ex.map(lambda s: self._is_factual(s["text"]), statements))
+            else:
+                filter_results = [self._is_factual(s["text"]) for s in statements]
+            return [
+                statements[i] for i, r in enumerate(filter_results)
+                if str(r.get("type", "")).strip().upper() == "FACTUAL"
+            ]
+        except Exception:
+            return None  # signal: fall back to full extraction in process_session
+
     def process_session(
         self,
         *,
         session: List[Dict[str, Any]],
         session_index: int,
         session_time: str,
+        precomputed_factual: Optional[List[Dict[str, Any]]] = None,
         max_workers: int = 16,
     ) -> Dict[str, Any]:
         session_id = f"s_{session_index:03d}"
         session_text = self._session_to_user_text(session)
 
-        statements = self._extract_statements(session_text)
-        n = len(statements)
-
-        # ── PHASE A: classify all statements in parallel ──────────────────
-        if n > 1:
-            with ThreadPoolExecutor(max_workers=min(n, max_workers)) as ex:
-                filter_results = list(ex.map(lambda s: self._is_factual(s["text"]), statements))
+        if precomputed_factual is not None:
+            # Pre-scan already did extract+filter — skip those LLM calls
+            statements = precomputed_factual
+            filter_results = [{"type": "FACTUAL", "reason": "pre-classified"} for _ in statements]
+            factual_indices = list(range(len(statements)))
         else:
-            filter_results = [self._is_factual(s["text"]) for s in statements]
+            statements = self._extract_statements(session_text)
+            n = len(statements)
 
-        factual_indices = [
-            i for i, r in enumerate(filter_results)
-            if str(r.get("type", "")).strip().upper() == "FACTUAL"
-        ]
+            # ── PHASE A: classify all statements in parallel ──────────────────
+            if n > 1:
+                with ThreadPoolExecutor(max_workers=min(n, max_workers)) as ex:
+                    filter_results = list(ex.map(lambda s: self._is_factual(s["text"]), statements))
+            else:
+                filter_results = [self._is_factual(s["text"]) for s in statements]
+
+            factual_indices = [
+                i for i, r in enumerate(filter_results)
+                if str(r.get("type", "")).strip().upper() == "FACTUAL"
+            ]
 
         # ── PHASE B: trigger gate for all FACTUAL statements in parallel ──
         # Snapshot impression once — gate only reads it, never writes.
