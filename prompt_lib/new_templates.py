@@ -5,17 +5,13 @@ The core question for each candidate statement: "If I needed to answer a questio
 Extract if YES — keep if it falls into any of these four categories:
 1. CURRENT STATE: what is currently true about the user right now
    (where they live, who they're with, what job they have, their health status)
-   INCLUDES: environmental conditions the user is currently in, whether implied by actions OR by direct observation
-   - Actions implying environment: digging out a parka → cold climate; setting up fans everywhere → heatwave; buying rain boots → rainy climate
-   - Direct observations of the user's own living environment that imply where they are or what climate they're in
-     (recurring local pests or wildlife at home, persistent weather they're experiencing, visible local vegetation)
+   INCLUDES: environmental conditions the user is currently in, when their own actions imply it
+   (digging out a parka / icy windshield → currently in cold/freezing weather;
+    setting up fans everywhere → currently in a heatwave; buying rain boots → rainy climate now)
 2. RECENT CHANGE: a past event whose result is still in effect now
    (quit a job last week → currently unemployed; had a baby last month → currently a parent;
     signed a lease → currently living somewhere new; got a dog → currently has a dog;
-    started attending a new religious community → religious affiliation may have changed)
-   INCLUDES: actions that permanently alter ownership — when someone gives away, sells, or discards
-   the last or only instance of something significant, the result is they no longer own it
-   (e.g., sold the only car → car-free; gave away the last pet → no longer has that pet)
+    went through a divorce → relationship status changed; changed jobs → professional identity shifted)
 3. BIOGRAPHICAL BACKGROUND: stable facts about who this person is
    (grew up somewhere, has a degree, has children, native language)
 4. LASTING PREFERENCE OR HABIT: recurring patterns, values, constraints
@@ -56,7 +52,7 @@ HYPOTHETICAL_FILTER_PROMPT = """Classify this user statement as FACTUAL, HYPOTHE
 Statement: {statement}
 
 FACTUAL: States a real current condition about the user's life, circumstances, or arrangements.
-  Examples: "I recently moved to a new city", "I work at a startup now", "My boyfriend and I broke up"
+  Examples: "I just relocated for work", "I work at a startup now", "My boyfriend and I broke up"
 
 HYPOTHETICAL: A thought experiment, wish, plan, or scenario not yet real.
   Examples: "If I were to move...", "I've been thinking about switching jobs", "I wish I could..."
@@ -140,10 +136,10 @@ Rules:
   NOT current observations. NOT future plans. Only things that might now be OUTDATED.
 - Generate competing, contradictory hypotheses freely — they don't need to be consistent.
 - Use the profile summary to target specific stored facts.
-  If summary mentions a specific city and the statement implies a very different climate or geography → generate "user lives in [that city]".
+  If summary mentions a specific place and the statement implies a very different climate or geography → generate "user lives in [that place]".
   If summary mentions "permanent resident" and statement implies federal employment → generate "user is comfortable staying a permanent resident / not pursuing citizenship".
 - Think about SYSTEMIC CONSEQUENCES, not just the immediate event:
-  selling a house → relocated somewhere new → "user is a homeowner in [former city]" is now wrong
+  inheriting property from a family member → now a homeowner → "user rents their home" is now wrong
   federal job offer → federal jobs require security clearance → clearance requires citizenship → "user is not pursuing citizenship" is now wrong
   removing a hedge → the sound barrier it provided is gone → "noise from highway is blocked by vegetation" is now wrong
   parka from back of closet → cold climate → contradicts any stored belief about warm/humid climate
@@ -182,7 +178,7 @@ Rules:
 - no_conflict: the memory is unaffected by this statement (confidence < 0.35 OR clearly independent)
 - Only include judgments for direct_invalidation and weakens_support — skip no_conflict items
 - inference_chain must trace the logical path: new fact → intermediate implication → why old memory fails
-  Example: "user started working remotely → no longer commutes to office → 'works from downtown office daily' memory is false"
+  Example: "user started a new job → no longer at previous employer → 'works at [old company]' memory is false"
 - Confidence reflects certainty that the old memory is now invalid:
   0.9+: near-certain invalidation (e.g., new location named explicitly, old location named in memory)
   0.7-0.9: strong implied invalidation (e.g., "new city" without naming old city)
