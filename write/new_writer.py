@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
 from ..memory.new_models import Evidence, GlobalImpression, MemoryItem, StaleMetadata, VersionEntry
@@ -392,63 +393,112 @@ class NewSessionWriterMixin:
         session: List[Dict[str, Any]],
         session_index: int,
         session_time: str,
+        max_workers: int = 16,
     ) -> Dict[str, Any]:
         session_id = f"s_{session_index:03d}"
         session_text = self._session_to_user_text(session)
 
+        statements = self._extract_statements(session_text)
+        n = len(statements)
+
+        # ── PHASE A: classify all statements in parallel ──────────────────
+        if n > 1:
+            with ThreadPoolExecutor(max_workers=min(n, max_workers)) as ex:
+                filter_results = list(ex.map(lambda s: self._is_factual(s["text"]), statements))
+        else:
+            filter_results = [self._is_factual(s["text"]) for s in statements]
+
+        factual_indices = [
+            i for i, r in enumerate(filter_results)
+            if str(r.get("type", "")).strip().upper() == "FACTUAL"
+        ]
+
+        # ── PHASE B: trigger gate for all FACTUAL statements in parallel ──
+        # Snapshot impression once — gate only reads it, never writes.
+        impression = self.store.get_global_impression()
+        if len(factual_indices) > 1:
+            with ThreadPoolExecutor(max_workers=min(len(factual_indices), max_workers)) as ex:
+                gate_list = list(ex.map(
+                    lambda i: self._check_trigger_gate(statements[i]["text"], impression),
+                    factual_indices,
+                ))
+        else:
+            gate_list = [self._check_trigger_gate(statements[i]["text"], impression) for i in factual_indices]
+        gate_results: Dict[int, Dict[str, Any]] = dict(zip(factual_indices, gate_list))
+
+        triggered_indices = [i for i in factual_indices if gate_results[i].get("should_trigger", False)]
+
+        # Create new memory items serially (fast, in-memory; must precede search
+        # so later searches can find already-created sibling items).
+        new_items: Dict[int, Any] = {}
+        for i in triggered_indices:
+            new_items[i] = self._create_new_item(
+                statements[i]["text"],
+                session_index=session_index,
+                session_time=session_time,
+            )
+
+        # ── PHASE C: hypothesis + candidate search + judgment — all parallel ─
+        def _process_triggered(i: int):
+            text = statements[i]["text"]
+            hyps = self._generate_impact_hypotheses(text, impression)
+            candidates = self._search_candidates(text, hyps)
+            judgments = self._run_abductive_judgment(text, hyps, candidates)
+            return i, hyps, candidates, judgments
+
+        if len(triggered_indices) > 1:
+            with ThreadPoolExecutor(max_workers=min(len(triggered_indices), max_workers)) as ex:
+                triggered_results = list(ex.map(_process_triggered, triggered_indices))
+        else:
+            triggered_results = [_process_triggered(i) for i in triggered_indices]
+
+        triggered_data: Dict[int, Any] = {
+            i: (hyps, candidates, judgments)
+            for i, hyps, candidates, judgments in triggered_results
+        }
+
+        # ── PHASE D: dispatch judgments serially (writes to store) ────────
         statement_log: List[Dict[str, Any]] = []
         all_judgment_logs: List[Dict[str, Any]] = []
         processed_statements: List[str] = []
 
-        statements = self._extract_statements(session_text)
+        for i, stmt_info in enumerate(statements):
+            text = stmt_info["text"]
+            stmt_entry: Dict[str, Any] = {"statement": text, "pipeline": []}
 
-        for stmt_info in statements:
-            statement = stmt_info["text"]
-            stmt_entry: Dict[str, Any] = {"statement": statement, "pipeline": []}
-
-            filter_result = self._is_factual(statement)
+            filter_result = filter_results[i]
             stmt_type = str(filter_result.get("type", "")).strip().upper()
             stmt_entry["hypothetical_filter"] = filter_result
 
-            if stmt_type != "FACTUAL":
+            if i not in factual_indices:
                 stmt_entry["pipeline"].append(f"dropped at hypothetical_filter (type={stmt_type})")
                 statement_log.append(stmt_entry)
                 continue
 
-            impression = self.store.get_global_impression()
-            gate_result = self._check_trigger_gate(statement, impression)
+            gate_result = gate_results[i]
             stmt_entry["trigger_gate"] = gate_result
 
-            should_trigger = gate_result.get("should_trigger", False)
-            if not should_trigger:
+            if i not in triggered_indices:
                 stmt_entry["pipeline"].append("dropped at trigger_gate")
                 statement_log.append(stmt_entry)
                 continue
 
             stmt_entry["pipeline"].append("passed trigger_gate")
-            processed_statements.append(statement)
+            processed_statements.append(text)
 
-            new_item = self._create_new_item(
-                statement,
-                session_index=session_index,
-                session_time=session_time,
-            )
+            new_item = new_items[i]
             stmt_entry["new_item_id"] = new_item.item_id
 
-            hypotheses = self._generate_impact_hypotheses(statement, impression)
-            stmt_entry["hypotheses"] = hypotheses
-
-            candidates = self._search_candidates(statement, hypotheses)
+            hyps, candidates, judgments = triggered_data[i]
+            stmt_entry["hypotheses"] = hyps
             stmt_entry["candidate_ids"] = [c.item_id for c in candidates]
-
-            judgments = self._run_abductive_judgment(statement, hypotheses, candidates)
             stmt_entry["judgments_raw"] = judgments
 
             stmt_judgment_logs: List[Dict[str, Any]] = []
             for j in judgments:
                 jlog = self._dispatch_judgment(
                     j,
-                    statement,
+                    text,
                     session_index=session_index,
                     session_time=session_time,
                     new_item_created=True,
@@ -460,6 +510,7 @@ class NewSessionWriterMixin:
             all_judgment_logs.extend(stmt_judgment_logs)
             statement_log.append(stmt_entry)
 
+        # ── PHASE E: update global impression (serial, 1 LLM call) ───────
         if self._should_update_impression(all_judgment_logs) or (
             processed_statements and not self.store.get_global_impression().content
         ):
