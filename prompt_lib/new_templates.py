@@ -6,17 +6,16 @@ Extract if YES — keep if it falls into any of these four categories:
 1. CURRENT STATE: what is currently true about the user right now
    (where they live, who they're with, what job they have, their health status)
    INCLUDES: environmental conditions the user is currently in, whether implied by actions OR by direct observation
-   - Actions implying climate/environment: digging out a parka → cold climate; setting up fans everywhere → heatwave; buying rain boots → rainy climate
-   - Direct observations of local environment: encountering local wildlife or insects at home, experiencing specific weather patterns, noticing local vegetation — these imply the user's current location and climate
-     (found scorpions in the house → lives in arid/desert region; dealing with constant humidity and mosquitoes → warm humid climate)
+   - Actions implying environment: digging out a parka → cold climate; setting up fans everywhere → heatwave; buying rain boots → rainy climate
+   - Direct observations of the user's own living environment that imply where they are or what climate they're in
+     (recurring local pests or wildlife at home, persistent weather they're experiencing, visible local vegetation)
 2. RECENT CHANGE: a past event whose result is still in effect now
    (quit a job last week → currently unemployed; had a baby last month → currently a parent;
     signed a lease → currently living somewhere new; got a dog → currently has a dog;
     started attending a new religious community → religious affiliation may have changed)
-   INCLUDES: actions that permanently alter ownership of a significant item
-   (gave away / donated / sold / discarded the last X → no longer owns X;
-    "dropped off my last winter coat" → currently owns no winter coat;
-    "sold my car" → currently car-free)
+   INCLUDES: actions that permanently alter ownership — when someone gives away, sells, or discards
+   the last or only instance of something significant, the result is they no longer own it
+   (e.g., sold the only car → car-free; gave away the last pet → no longer has that pet)
 3. BIOGRAPHICAL BACKGROUND: stable facts about who this person is
    (grew up somewhere, has a degree, has children, native language)
 4. LASTING PREFERENCE OR HABIT: recurring patterns, values, constraints
@@ -57,7 +56,7 @@ HYPOTHETICAL_FILTER_PROMPT = """Classify this user statement as FACTUAL, HYPOTHE
 Statement: {statement}
 
 FACTUAL: States a real current condition about the user's life, circumstances, or arrangements.
-  Examples: "I moved to Austin last month", "I work at a startup now", "My boyfriend and I broke up"
+  Examples: "I recently moved to a new city", "I work at a startup now", "My boyfriend and I broke up"
 
 HYPOTHETICAL: A thought experiment, wish, plan, or scenario not yet real.
   Examples: "If I were to move...", "I've been thinking about switching jobs", "I wish I could..."
@@ -144,7 +143,7 @@ Rules:
   If summary mentions a specific city and the statement implies a very different climate or geography → generate "user lives in [that city]".
   If summary mentions "permanent resident" and statement implies federal employment → generate "user is comfortable staying a permanent resident / not pursuing citizenship".
 - Think about SYSTEMIC CONSEQUENCES, not just the immediate event:
-  co-parenting mediation → the relationship that produced the child has ended → "user is in a committed relationship" is now wrong
+  selling a house → relocated somewhere new → "user is a homeowner in [former city]" is now wrong
   federal job offer → federal jobs require security clearance → clearance requires citizenship → "user is not pursuing citizenship" is now wrong
   removing a hedge → the sound barrier it provided is gone → "noise from highway is blocked by vegetation" is now wrong
   parka from back of closet → cold climate → contradicts any stored belief about warm/humid climate
@@ -183,7 +182,7 @@ Rules:
 - no_conflict: the memory is unaffected by this statement (confidence < 0.35 OR clearly independent)
 - Only include judgments for direct_invalidation and weakens_support — skip no_conflict items
 - inference_chain must trace the logical path: new fact → intermediate implication → why old memory fails
-  Example: "user moved to Austin → no longer in Seattle → 'lives in Seattle' memory is false"
+  Example: "user started working remotely → no longer commutes to office → 'works from downtown office daily' memory is false"
 - Confidence reflects certainty that the old memory is now invalid:
   0.9+: near-certain invalidation (e.g., new location named explicitly, old location named in memory)
   0.7-0.9: strong implied invalidation (e.g., "new city" without naming old city)
