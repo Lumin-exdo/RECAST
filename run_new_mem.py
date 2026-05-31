@@ -72,6 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-dir", type=str, default="", help="Shared LLM cache dir (optional, overrides per-run cache)")
     parser.add_argument("--embedding-model-path", type=str, default="")
     parser.add_argument("--embedding-device", type=str, default="cpu")
+    parser.add_argument("--seed", type=int, default=-1, help="Random seed for --n-samples shuffle (-1 = take first N, no shuffle)")
     return parser.parse_args()
 
 
@@ -132,7 +133,10 @@ def main() -> None:
         end = args.end_index if args.end_index >= 0 else len(all_records)
         records_to_run = all_records[args.start_index:end]
         if args.n_samples > 0:
-            records_to_run = records_to_run[: args.n_samples]
+            if args.seed >= 0:
+                import random as _random
+                _random.Random(args.seed).shuffle(records_to_run)
+            records_to_run = records_to_run[:args.n_samples]
 
     print(f"Running {len(records_to_run)} samples with model={model}, session_mode={args.session_mode}")
     print(f"Output dir: {run_dir}")
