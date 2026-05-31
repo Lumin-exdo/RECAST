@@ -67,6 +67,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--type", type=str, default="all", choices=["T1", "T2", "all"], help="Filter by sample type")
     parser.add_argument("--session-mode", type=str, default="full", choices=["full", "relevant_only"])
     parser.add_argument("--output-root", type=str, default=str(DEFAULT_OUTPUT_ROOT))
+    parser.add_argument("--start-index", type=int, default=0, help="Slice start (inclusive)")
+    parser.add_argument("--end-index", type=int, default=-1, help="Slice end (exclusive, -1=all)")
+    parser.add_argument("--cache-dir", type=str, default="", help="Shared LLM cache dir (optional, overrides per-run cache)")
     parser.add_argument("--embedding-model-path", type=str, default="")
     parser.add_argument("--embedding-device", type=str, default="cpu")
     return parser.parse_args()
@@ -102,11 +105,12 @@ def main() -> None:
     from MyMem.new_pipeline import NewMemEngine
     from MyMem.core.new_config import NewConfig
 
+    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else run_dir / ".cache"
     llm = LLMClient(
         model=model,
         api_key=api_key,
         base_url=base_url,
-        cache_dir=run_dir / ".cache",
+        cache_dir=cache_dir,
     )
     engine = NewMemEngine(
         llm=llm,
@@ -124,19 +128,23 @@ def main() -> None:
         if args.sample_index >= len(all_records):
             raise IndexError(f"sample_index {args.sample_index} out of range (total {len(all_records)})")
         records_to_run = [all_records[args.sample_index]]
-    elif args.n_samples > 0:
-        records_to_run = all_records[: args.n_samples]
     else:
-        records_to_run = all_records
+        end = args.end_index if args.end_index >= 0 else len(all_records)
+        records_to_run = all_records[args.start_index:end]
+        if args.n_samples > 0:
+            records_to_run = records_to_run[: args.n_samples]
 
     print(f"Running {len(records_to_run)} samples with model={model}, session_mode={args.session_mode}")
     print(f"Output dir: {run_dir}")
 
     answers: List[Dict[str, Any]] = []
     traces: List[Dict[str, Any]] = []
+    answers_path = run_dir / "answers.json"
+    traces_path = run_dir / "traces.json"
 
     for idx, item in enumerate(records_to_run):
         uid = str(item.get("uid", f"item_{idx}"))
+        abs_idx = args.start_index + idx if args.sample_index < 0 else args.sample_index
         print(f"  [{idx+1}/{len(records_to_run)}] uid={uid} type={item.get('type', '?')} ...", end="", flush=True)
 
         if hasattr(llm, "reset_usage_tracking"):
@@ -146,7 +154,7 @@ def main() -> None:
         try:
             result = engine.run_sample(
                 item,
-                sample_index=idx,
+                sample_index=abs_idx,
                 session_mode=args.session_mode,
             )
             elapsed = time.perf_counter() - t0
@@ -187,7 +195,7 @@ def main() -> None:
             "target_model_responses": responses,
             "target_model_meta": dim_meta,
             "usage_summary": usage_summary,
-            "sample_index": idx,
+            "sample_index": abs_idx,
             "type": item.get("type", ""),
             "elapsed_seconds": elapsed,
         }
@@ -200,9 +208,9 @@ def main() -> None:
         }
         traces.append(trace_record)
 
-    answers_path = run_dir / "answers.json"
-    traces_path = run_dir / "traces.json"
-    answers_path.write_text(json.dumps(answers, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Per-sample incremental write — answers only (traces written at end)
+        answers_path.write_text(json.dumps(answers, ensure_ascii=False, indent=2), encoding="utf-8")
+
     traces_path.write_text(json.dumps(traces, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"\nDone. Answers: {answers_path}")

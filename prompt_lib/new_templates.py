@@ -5,13 +5,18 @@ The core question for each candidate statement: "If I needed to answer a questio
 Extract if YES — keep if it falls into any of these four categories:
 1. CURRENT STATE: what is currently true about the user right now
    (where they live, who they're with, what job they have, their health status)
-   INCLUDES: environmental conditions the user is currently in, when their own actions imply it
-   (digging out a parka / icy windshield → currently in cold/freezing weather;
-    setting up fans everywhere → currently in a heatwave; buying rain boots → rainy climate now)
+   INCLUDES: environmental conditions the user is currently in, whether implied by actions OR by direct observation
+   - Actions implying climate/environment: digging out a parka → cold climate; setting up fans everywhere → heatwave; buying rain boots → rainy climate
+   - Direct observations of local environment: encountering local wildlife or insects at home, experiencing specific weather patterns, noticing local vegetation — these imply the user's current location and climate
+     (found scorpions in the house → lives in arid/desert region; dealing with constant humidity and mosquitoes → warm humid climate)
 2. RECENT CHANGE: a past event whose result is still in effect now
    (quit a job last week → currently unemployed; had a baby last month → currently a parent;
     signed a lease → currently living somewhere new; got a dog → currently has a dog;
-    met with a mediator for co-parenting → relationship has ended; completed RCIA → religious conversion)
+    started attending a new religious community → religious affiliation may have changed)
+   INCLUDES: actions that permanently alter ownership of a significant item
+   (gave away / donated / sold / discarded the last X → no longer owns X;
+    "dropped off my last winter coat" → currently owns no winter coat;
+    "sold my car" → currently car-free)
 3. BIOGRAPHICAL BACKGROUND: stable facts about who this person is
    (grew up somewhere, has a degree, has children, native language)
 4. LASTING PREFERENCE OR HABIT: recurring patterns, values, constraints
@@ -136,7 +141,7 @@ Rules:
   NOT current observations. NOT future plans. Only things that might now be OUTDATED.
 - Generate competing, contradictory hypotheses freely — they don't need to be consistent.
 - Use the profile summary to target specific stored facts.
-  If summary mentions Portland and the statement implies desert heat → generate "user lives in Portland".
+  If summary mentions a specific city and the statement implies a very different climate or geography → generate "user lives in [that city]".
   If summary mentions "permanent resident" and statement implies federal employment → generate "user is comfortable staying a permanent resident / not pursuing citizenship".
 - Think about SYSTEMIC CONSEQUENCES, not just the immediate event:
   co-parenting mediation → the relationship that produced the child has ended → "user is in a committed relationship" is now wrong

@@ -58,10 +58,10 @@ class NewSessionWriterMixin:
             text = str(s.get("text", "")).strip()
             if not text:
                 continue
-            temporal = str(s.get("temporal_scope", "")).strip()
             is_definite = s.get("is_definite", False)
-            if temporal == "current" and is_definite is True:
-                valid.append({"text": text, "temporal_scope": temporal, "is_definite": is_definite})
+            if is_definite is True:
+                category = str(s.get("category", "")).strip()
+                valid.append({"text": text, "category": category, "is_definite": is_definite})
         return valid
 
     def _is_factual(self, statement: str) -> Dict[str, Any]:
