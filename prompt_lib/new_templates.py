@@ -73,26 +73,33 @@ Rules:
 """
 
 
-TRIGGER_GATE_PROMPT = """Decide whether this user statement might require updating or invalidating existing memory about the user.
+TRIGGER_GATE_PROMPT = """Decide whether this user statement should be stored in the user's memory profile.
 
 Statement: {statement}
+Statement category: {category}
 
-Current user profile summary:
+Current user profile summary (INCOMPLETE — captures recent highlights only, not every stored fact):
 {global_impression}
 
 Output JSON only:
-{
+{{
   "should_trigger": true,
   "reason": "one sentence explanation"
-}
+}}
 
-Rules:
-- should_trigger=true if the statement might change, contradict, or make obsolete any existing memory about the user
-- should_trigger=true if the profile is empty (any factual personal statement is worth storing)
-- should_trigger=false only for clearly irrelevant statements: weather comments, external world facts, task-only content with no personal state implication
-- Common triggers: change of location, change of job/employer, change of relationship status, change of health, change of habits, change of living situation
-- Even indirect statements can trigger: "adapting to life in a new city" implies a location change without naming the city
-- Be generous with triggering — a false negative (missing an important update) is worse than a false positive
+Rules (apply the FIRST rule that matches):
+1. should_trigger=true if the statement introduces a specific personal attribute
+   (preference, habit, belief, portfolio, routine, possession, identity) —
+   even if it does not conflict with anything in the summary.
+   The summary is incomplete; absence of a topic does NOT mean the fact is already stored.
+2. should_trigger=true if the statement might change, contradict, or make obsolete any
+   existing memory about the user (location, job, relationship, health, habits, living situation).
+3. should_trigger=true if the profile is empty.
+4. should_trigger=false ONLY for: weather/nature observations, external world news,
+   one-shot tasks with no personal state implication, generic filler.
+
+Key: a false negative (failing to store a real personal fact) is far worse than
+a false positive (storing a mildly redundant fact). When in doubt, trigger=true.
 """
 
 

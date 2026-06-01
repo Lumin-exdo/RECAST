@@ -12,7 +12,6 @@ from ..prompt_lib.new_templates import (
     IMPACT_HYPOTHESIS_PROMPT,
     POOL_SYNTHESIS_PROMPT,
     STATEMENT_EXTRACTOR_PROMPT,
-    TRIGGER_GATE_PROMPT,
 )
 
 
@@ -71,13 +70,6 @@ class NewSessionWriterMixin:
             "Classify the statement above.",
             phase="hypothetical_filter",
         )
-        return result
-
-    def _check_trigger_gate(self, statement: str, global_impression: GlobalImpression) -> Dict[str, Any]:
-        prompt = TRIGGER_GATE_PROMPT.replace("{statement}", statement).replace(
-            "{global_impression}", global_impression.content or "(no profile yet — user's first sessions)"
-        )
-        result = self._safe_call_json(prompt, "Assess trigger.", phase="trigger_gate")
         return result
 
     def _generate_impact_hypotheses(self, statement: str, global_impression: GlobalImpression) -> List[str]:
@@ -449,20 +441,11 @@ class NewSessionWriterMixin:
                 if str(r.get("type", "")).strip().upper() == "FACTUAL"
             ]
 
-        # ── PHASE B: trigger gate for all FACTUAL statements in parallel ──
-        # Snapshot impression once — gate only reads it, never writes.
+        # ── PHASE B: all FACTUAL statements proceed directly (no trigger gate) ──
+        # statement_extractor + hypothetical_filter already guarantee these are
+        # real personal facts; a redundant gate only causes false negatives.
+        triggered_indices = factual_indices
         impression = self.store.get_global_impression()
-        if len(factual_indices) > 1:
-            with ThreadPoolExecutor(max_workers=min(len(factual_indices), max_workers)) as ex:
-                gate_list = list(ex.map(
-                    lambda i: self._check_trigger_gate(statements[i]["text"], impression),
-                    factual_indices,
-                ))
-        else:
-            gate_list = [self._check_trigger_gate(statements[i]["text"], impression) for i in factual_indices]
-        gate_results: Dict[int, Dict[str, Any]] = dict(zip(factual_indices, gate_list))
-
-        triggered_indices = [i for i in factual_indices if gate_results[i].get("should_trigger", False)]
 
         # Create new memory items serially (fast, in-memory; must precede search
         # so later searches can find already-created sibling items).
@@ -511,15 +494,7 @@ class NewSessionWriterMixin:
                 statement_log.append(stmt_entry)
                 continue
 
-            gate_result = gate_results[i]
-            stmt_entry["trigger_gate"] = gate_result
-
-            if i not in triggered_indices:
-                stmt_entry["pipeline"].append("dropped at trigger_gate")
-                statement_log.append(stmt_entry)
-                continue
-
-            stmt_entry["pipeline"].append("passed trigger_gate")
+            stmt_entry["pipeline"].append("passed hypothetical_filter")
             processed_statements.append(text)
 
             new_item = new_items[i]

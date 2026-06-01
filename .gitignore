@@ -10,6 +10,8 @@ models/
 .cache/
 .vscode/
 
+analysis_output/
+
 # secrets
 .env
 *.env
