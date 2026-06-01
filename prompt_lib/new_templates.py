@@ -89,7 +89,7 @@ Output JSON only:
 
 Rules (apply the FIRST rule that matches):
 1. should_trigger=true if the statement introduces a specific personal attribute
-   (preference, habit, belief, portfolio, routine, possession, identity) —
+   (preference, habit, belief, routine, possession, identity) —
    even if it does not conflict with anything in the summary.
    The summary is incomplete; absence of a topic does NOT mean the fact is already stored.
 2. should_trigger=true if the statement might change, contradict, or make obsolete any
