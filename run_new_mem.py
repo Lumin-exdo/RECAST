@@ -121,12 +121,14 @@ def main() -> None:
     default_extra: dict = {}
     if args.no_thinking:
         default_extra["extra_body"] = {"thinking": {"type": "disabled"}}
-    # Cache disabled by default. Use --use-cache to enable (stored per-sample at {idx:04d}/.cache/).
+    # LLM calls are always logged to {idx:04d}/.cache/ for live inspection (write-only, never read back).
+    # Pass --use-cache to also read from that directory, replaying cached responses.
     llm = LLMClient(
         model=model,
         api_key=api_key,
         base_url=base_url,
         cache_dir=None,
+        log_dir=None,
         default_extra_request_kwargs=default_extra or None,
     )
     engine = NewMemEngine(
@@ -184,9 +186,12 @@ def main() -> None:
 
         sample_dir = run_dir / f"{abs_idx:04d}"
         sample_dir.mkdir(exist_ok=True)
+        llm.log_dir = sample_dir / ".cache"
+        llm.log_dir.mkdir(exist_ok=True)
         if args.use_cache:
             llm.cache_dir = sample_dir / ".cache"
-            llm.cache_dir.mkdir(exist_ok=True)
+        else:
+            llm.cache_dir = None
 
         if hasattr(llm, "reset_usage_tracking"):
             llm.reset_usage_tracking()

@@ -302,16 +302,20 @@ class LLMClient:
         api_key: str,
         base_url: str,
         cache_dir: Optional[Path] = None,
+        log_dir: Optional[Path] = None,
         openai_cls=OpenAI,
         default_extra_request_kwargs: Optional[Dict[str, Any]] = None,
     ):
         self.model = model
         self.client = openai_cls(api_key=api_key, base_url=base_url)
         self.cache_dir = cache_dir
+        self.log_dir = log_dir
         self._call_records: List[Dict[str, Any]] = []
         self._default_extra_request_kwargs: Dict[str, Any] = dict(default_extra_request_kwargs or {})
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
+        if self.log_dir is not None:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def reset_usage_tracking(self) -> None:
         self._call_records = []
@@ -337,6 +341,21 @@ class LLMClient:
         ).hexdigest()
         return self.cache_dir / f"{key}.json"
 
+    def _log_path(self, messages: List[Dict[str, str]]) -> Optional[Path]:
+        if self.log_dir is None:
+            return None
+        key = hashlib.sha256(
+            json.dumps(
+                {
+                    "model": self.model,
+                    "messages": messages,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        return self.log_dir / f"{key}.json"
+
     def _record_call(
         self,
         *,
@@ -356,6 +375,8 @@ class LLMClient:
             "response_chars": len(text or ""),
             "usage": usage,
             "billed_usage": _zero_usage_like(usage) if cache_hit else usage,
+            "messages": messages,
+            "response": text,
         }
         if extra_meta:
             record.update(extra_meta)
@@ -407,20 +428,21 @@ class LLMClient:
                 if not str(text).strip():
                     raise ValueError("Empty LLM response")
                 usage = normalize_usage(getattr(resp, "usage", None))
+                payload = json.dumps(
+                    {
+                        "text": text,
+                        "usage": usage,
+                        "model": self.model,
+                        "messages": messages,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
                 if cache_path is not None:
-                    cache_path.write_text(
-                        json.dumps(
-                            {
-                                "text": text,
-                                "usage": usage,
-                                "model": self.model,
-                                "messages": messages,
-                            },
-                            ensure_ascii=False,
-                            indent=2,
-                        ),
-                        encoding="utf-8",
-                    )
+                    cache_path.write_text(payload, encoding="utf-8")
+                log_path = self._log_path(messages)
+                if log_path is not None and cache_path != log_path:
+                    log_path.write_text(payload, encoding="utf-8")
                 self._record_call(
                     messages=messages,
                     text=text,

@@ -264,16 +264,20 @@ class ResponsesLLMClient:
         api_key: str,
         base_url: str,
         cache_dir: Optional[Path] = None,
+        log_dir: Optional[Path] = None,
         timeout: float = 60.0,
     ):
         self.model = model
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.cache_dir = cache_dir
+        self.log_dir = log_dir
         self.timeout = timeout
         self._call_records: List[Dict[str, Any]] = []
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
+        if self.log_dir is not None:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def reset_usage_tracking(self) -> None:
         self._call_records = []
@@ -304,6 +308,27 @@ class ResponsesLLMClient:
             ).encode("utf-8")
         ).hexdigest()
         return self.cache_dir / f"{key}.json"
+
+    def _log_path(
+        self,
+        messages: List[Dict[str, str]],
+        extra_payload: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Path]:
+        if self.log_dir is None:
+            return None
+        key = hashlib.sha256(
+            json.dumps(
+                {
+                    "adapter": "responses",
+                    "model": self.model,
+                    "messages": messages,
+                    "extra_payload": extra_payload or {},
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        return self.log_dir / f"{key}.json"
 
     def _post_responses(self, payload: Dict[str, Any]) -> str:
         url = f"{self.base_url}/responses"
@@ -339,6 +364,8 @@ class ResponsesLLMClient:
             "response_chars": len(text or ""),
             "usage": usage,
             "billed_usage": billed_usage,
+            "messages": messages,
+            "response": text,
         }
         if extra_meta:
             record.update(extra_meta)
@@ -383,11 +410,14 @@ class ResponsesLLMClient:
                 if not str(text).strip():
                     raise ValueError("Empty LLM response")
                 usage = extract_usage_from_responses_body(raw_body)
+                log_payload = json.dumps(
+                    {"text": text, "usage": usage, "payload": payload}, ensure_ascii=False, indent=2
+                )
                 if cache_path is not None:
-                    cache_path.write_text(
-                        json.dumps({"text": text, "usage": usage, "payload": payload}, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                    cache_path.write_text(log_payload, encoding="utf-8")
+                log_path = self._log_path(messages, extra_payload=extra_payload)
+                if log_path is not None and log_path != cache_path:
+                    log_path.write_text(log_payload, encoding="utf-8")
                 self._record_call(
                     messages=messages,
                     text=text,
