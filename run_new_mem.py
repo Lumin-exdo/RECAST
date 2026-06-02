@@ -73,6 +73,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--embedding-model-path", type=str, default="")
     parser.add_argument("--embedding-device", type=str, default="cpu")
     parser.add_argument("--seed", type=int, default=-1, help="Random seed for --n-samples shuffle (-1 = take first N, no shuffle)")
+    parser.add_argument("--no-thinking", action="store_true", help="Disable chain-of-thought thinking for DeepSeek models")
+    parser.add_argument("--uids", type=str, default="", help="Comma-separated list of UIDs to run (overrides --n-samples / --start-index)")
     return parser.parse_args()
 
 
@@ -107,11 +109,15 @@ def main() -> None:
     from MyMem.core.new_config import NewConfig
 
     cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else run_dir / ".cache"
+    default_extra: dict = {}
+    if args.no_thinking:
+        default_extra["thinking"] = {"type": "disabled"}
     llm = LLMClient(
         model=model,
         api_key=api_key,
         base_url=base_url,
         cache_dir=cache_dir,
+        default_extra_request_kwargs=default_extra or None,
     )
     engine = NewMemEngine(
         llm=llm,
@@ -125,7 +131,18 @@ def main() -> None:
     if args.type != "all":
         all_records = [r for r in all_records if r.get("type") == args.type]
 
-    if args.sample_index >= 0:
+    uid_index_map: dict = {}  # uid → original index in all_records (for abs_idx)
+    if args.uids:
+        target_uids = {u.strip() for u in args.uids.split(",") if u.strip()}
+        records_to_run = []
+        for global_i, r in enumerate(all_records):
+            uid_str = str(r.get("uid", ""))
+            if any(uid_str.startswith(u) for u in target_uids):
+                records_to_run.append(r)
+                uid_index_map[uid_str] = global_i
+        if not records_to_run:
+            raise ValueError(f"No records matched UIDs: {target_uids}")
+    elif args.sample_index >= 0:
         if args.sample_index >= len(all_records):
             raise IndexError(f"sample_index {args.sample_index} out of range (total {len(all_records)})")
         records_to_run = [all_records[args.sample_index]]
@@ -148,7 +165,12 @@ def main() -> None:
 
     for idx, item in enumerate(records_to_run):
         uid = str(item.get("uid", f"item_{idx}"))
-        abs_idx = args.start_index + idx if args.sample_index < 0 else args.sample_index
+        if uid in uid_index_map:
+            abs_idx = uid_index_map[uid]
+        elif args.sample_index >= 0:
+            abs_idx = args.sample_index
+        else:
+            abs_idx = args.start_index + idx
         print(f"  [{idx+1}/{len(records_to_run)}] uid={uid} type={item.get('type', '?')} ...", end="", flush=True)
 
         if hasattr(llm, "reset_usage_tracking"):

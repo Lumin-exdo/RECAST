@@ -303,11 +303,13 @@ class LLMClient:
         base_url: str,
         cache_dir: Optional[Path] = None,
         openai_cls=OpenAI,
+        default_extra_request_kwargs: Optional[Dict[str, Any]] = None,
     ):
         self.model = model
         self.client = openai_cls(api_key=api_key, base_url=base_url)
         self.cache_dir = cache_dir
         self._call_records: List[Dict[str, Any]] = []
+        self._default_extra_request_kwargs: Dict[str, Any] = dict(default_extra_request_kwargs or {})
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -367,6 +369,10 @@ class LLMClient:
         extra_meta: Optional[Dict[str, Any]] = None,
         extra_request_kwargs: Optional[Dict[str, Any]] = None,
     ) -> str:
+        # Merge default kwargs (e.g. thinking=disabled) with per-call overrides.
+        merged_kwargs: Dict[str, Any] = {**self._default_extra_request_kwargs, **(extra_request_kwargs or {})}
+        extra_request_kwargs = merged_kwargs or None
+
         cache_path = None
         if not extra_request_kwargs:
             cache_path = self._cache_path(messages)
