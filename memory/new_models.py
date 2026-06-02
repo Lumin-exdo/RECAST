@@ -50,6 +50,7 @@ class MemoryItem:
     created_time: str
     last_updated_session: int
     last_updated_time: str
+    category: str = ""  # current_state|recent_change|biographical|lasting_preference
     stale_metadata: Optional[StaleMetadata] = None
     evidence_pool: List[Evidence] = field(default_factory=list)
     pool_confidence: float = 0.0
@@ -61,6 +62,7 @@ class MemoryItem:
             "content": self.content,
             "status": self.status,
             "confidence": self.confidence,
+            "category": self.category,
             "created_session": self.created_session,
             "created_time": self.created_time,
             "last_updated_session": self.last_updated_session,

@@ -49,11 +49,13 @@ class NewQueryEngineMixin:
         self,
         query_text: str,
         active_items: List[MemoryItem],
+        uncertain_items: List[MemoryItem],
         stale_items: List[MemoryItem],
         *,
         query_label: str = "",
     ) -> Dict[str, Any]:
         active_text = "\n".join(f"- [{item.item_id}] {item.content}" for item in active_items) or "(none)"
+        uncertain_text = "\n".join(f"- [{item.item_id}] {item.content}" for item in uncertain_items) or "(none)"
         stale_text = "\n".join(
             f"- [{item.item_id}] {item.content} (stale since session {item.stale_metadata.stale_since_session if item.stale_metadata else '?'}: {item.stale_metadata.stale_reason if item.stale_metadata else 'unknown'})"
             for item in stale_items
@@ -63,6 +65,7 @@ class NewQueryEngineMixin:
             PREMISE_CHECK_PROMPT
             .replace("{query_text}", query_text)
             .replace("{active_memories}", active_text)
+            .replace("{uncertain_memories}", uncertain_text)
             .replace("{stale_memories}", stale_text)
         )
         return self._safe_call_json_q(prompt, "Check premise.", phase="premise_check", query_label=query_label)
@@ -74,6 +77,7 @@ class NewQueryEngineMixin:
         uncertain_items: List[MemoryItem],
         stale_items: List[MemoryItem],
         premise_result: Dict[str, Any],
+        profile_summary: str,
         *,
         query_label: str = "",
     ) -> Dict[str, Any]:
@@ -105,6 +109,7 @@ class NewQueryEngineMixin:
             .replace("{stale_facts}", stale_facts_text)
             .replace("{premise_safe}", str(premise_safe))
             .replace("{correction}", correction or "none")
+            .replace("{profile_summary}", profile_summary or "(no profile)")
         )
         return self._safe_call_json_q(prompt, "Generate answer.", phase="answer_generation", query_label=query_label)
 
@@ -114,9 +119,12 @@ class NewQueryEngineMixin:
         uncertain_items = retrieved["uncertain"]
         stale_items = retrieved["stale"]
 
+        profile_summary = self.store.get_global_impression().content or ""
+
         premise_result = self._check_premise(
             query_text,
             active_items,
+            uncertain_items,
             stale_items,
             query_label=query_label,
         )
@@ -127,6 +135,7 @@ class NewQueryEngineMixin:
             uncertain_items,
             stale_items,
             premise_result,
+            profile_summary,
             query_label=query_label,
         )
 

@@ -50,6 +50,16 @@ class NewProfileStore:
     def get_all_items(self) -> List[MemoryItem]:
         return list(self._items.values())
 
+    def get_preference_anchors(self) -> List[str]:
+        """Return content of all active/uncertain lasting_preference and biographical memories.
+        Used to provide stable cross-reference targets to the hypothesis generator that the
+        compressed global_impression may have dropped."""
+        anchors = []
+        for item in self._items.values():
+            if item.status in ("active", "uncertain") and item.category in ("lasting_preference", "biographical"):
+                anchors.append(item.content)
+        return anchors
+
     def search_by_embedding(
         self,
         *,

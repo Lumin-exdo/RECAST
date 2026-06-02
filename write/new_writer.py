@@ -72,9 +72,22 @@ class NewSessionWriterMixin:
         )
         return result
 
-    def _generate_impact_hypotheses(self, statement: str, global_impression: GlobalImpression) -> List[str]:
-        prompt = IMPACT_HYPOTHESIS_PROMPT.replace("{statement}", statement).replace(
-            "{global_impression}", global_impression.content or "(no profile yet)"
+    def _generate_impact_hypotheses(
+        self,
+        statement: str,
+        global_impression: GlobalImpression,
+        preference_anchors: List[str],
+    ) -> List[str]:
+        anchors_text = (
+            "\n".join(f"- {a}" for a in preference_anchors)
+            if preference_anchors
+            else "(none stored yet)"
+        )
+        prompt = (
+            IMPACT_HYPOTHESIS_PROMPT
+            .replace("{statement}", statement)
+            .replace("{global_impression}", global_impression.content or "(no profile yet)")
+            .replace("{preference_anchors}", anchors_text)
         )
         result = self._safe_call_json(prompt, "Generate impact hypotheses.", phase="impact_hypothesis")
         impacts = result.get("hypothetical_impacts", [])
@@ -154,6 +167,7 @@ class NewSessionWriterMixin:
         *,
         session_index: int,
         session_time: str,
+        category: str = "",
         confidence: float = 0.85,
         supersedes: str = "",
     ) -> MemoryItem:
@@ -167,6 +181,7 @@ class NewSessionWriterMixin:
             created_time=session_time,
             last_updated_session=session_index,
             last_updated_time=session_time,
+            category=category,
         )
         if supersedes:
             item.version_log.append(VersionEntry(
@@ -365,7 +380,7 @@ class NewSessionWriterMixin:
             return
 
         new_impression = GlobalImpression(
-            content=updated_content[:500],
+            content=updated_content[:1000],
             last_updated_session=session_index,
             last_updated_time=session_time,
             update_log=list(impression.update_log) + [
@@ -455,12 +470,16 @@ class NewSessionWriterMixin:
                 statements[i]["text"],
                 session_index=session_index,
                 session_time=session_time,
+                category=statements[i].get("category", ""),
             )
+
+        # Fetch once; stable within this session's PHASE C (no writes between C calls).
+        preference_anchors = self.store.get_preference_anchors()
 
         # ── PHASE C: hypothesis + candidate search + judgment — all parallel ─
         def _process_triggered(i: int):
             text = statements[i]["text"]
-            hyps = self._generate_impact_hypotheses(text, impression)
+            hyps = self._generate_impact_hypotheses(text, impression, preference_anchors)
             candidates = self._search_candidates(text, hyps)
             judgments = self._run_abductive_judgment(text, hyps, candidates)
             return i, hyps, candidates, judgments
