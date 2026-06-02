@@ -111,7 +111,7 @@ def main() -> None:
     cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else run_dir / ".cache"
     default_extra: dict = {}
     if args.no_thinking:
-        default_extra["thinking"] = {"type": "disabled"}
+        default_extra["extra_body"] = {"thinking": {"type": "disabled"}}
     llm = LLMClient(
         model=model,
         api_key=api_key,
