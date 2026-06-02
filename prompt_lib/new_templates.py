@@ -51,25 +51,100 @@ HYPOTHETICAL_FILTER_PROMPT = """Classify this user statement as FACTUAL, HYPOTHE
 
 Statement: {statement}
 
-FACTUAL: States a real current condition about the user's life, circumstances, or arrangements.
-  Examples: "I just relocated for work", "I work at a startup now", "My boyfriend and I broke up"
+────────────────────────────────────────────────────────
+FACTUAL — asserts a real condition about the user: a completed event, an ongoing habit,
+a held identity/belief, or a COMMITTED future action (decided, not just considered).
+Tense alone does NOT determine this — a future-tense statement that expresses a
+definite commitment or identity is FACTUAL, not HYPOTHETICAL.
 
-HYPOTHETICAL: A thought experiment, wish, plan, or scenario not yet real.
-  Examples: "If I were to move...", "I've been thinking about switching jobs", "I wish I could..."
+  Completed events / current states:
+    "I just relocated for work"
+    "My boyfriend and I broke up"
+    "I sold my car last month"
+    "I work at a startup now"
 
-EMOTIONAL: Primarily an emotional reaction without asserting a factual state change.
-  Examples: "I'm so tired of my commute", "I love my new neighborhood" (without implying relocation)
+  Ongoing habits and identities:
+    "I've been going to therapy every week"
+    "I don't eat meat anymore"
+    "I've always considered myself an independent"
 
+  Definite commitments (future-tense but certain — no uncertainty markers):
+    "I'll be backing the same ticket all the way down the ballot"   ← political identity
+    "I'm never drinking again"                                      ← lifestyle commitment
+    "From now on I'm only eating organic"                           ← new habit
+    "I'm moving to Seattle next month — signed the lease"          ← completed precondition
+    "I've decided to go back to school"                             ← decision made
+    "I'll always support this team no matter what"                  ← identity/loyalty
+
+  Implied facts (wish or conditional phrasing that reveals a current state):
+    "I miss my old apartment"          → user no longer lives there
+    "I wish I still had my old routine" → routine has changed
+    "I can't imagine going back to finance" → user is no longer in finance
+
+────────────────────────────────────────────────────────
+HYPOTHETICAL — the action or state is genuinely UNDECIDED or not yet committed.
+Signals: "thinking about", "considering", "might", "maybe", "probably", "wish I could",
+"if I were to", "I'd like to", "hoping to", "what if", "I could see myself".
+
+  Unconverted considerations:
+    "I've been thinking about switching jobs"   ← no decision made
+    "I'm considering going vegan"               ← still undecided
+    "I might apply to grad school"              ← uncertain
+
+  Explicit conditionals / thought experiments:
+    "If I were to move..."
+    "What if I changed careers?"
+
+  Desires about things outside the user's current reality (external obstacles, permanent traits):
+    "I wish I could afford a house"    ← financial constraint blocks it; the desire is not a commitment
+    "I'd love to be taller"            ← unfulfillable; not a state the user can enter
+
+  One-time near-future plans (not a life-state change):
+    "I'll call her tonight"
+    "I'm going to the grocery store later"
+
+────────────────────────────────────────────────────────
+EMOTIONAL — expresses feeling or attitude WITHOUT asserting a new factual condition;
+the user's real-world state is unchanged by the statement.
+
+    "I'm so tired of my commute"  (job and home location unchanged)
+    "I love spending time with my kids"  (no new fact about kids)
+    "This weather is incredible"
+
+────────────────────────────────────────────────────────
 Output JSON only:
 {
   "type": "FACTUAL|HYPOTHETICAL|EMOTIONAL",
   "reason": "one sentence explanation"
 }
 
-Rules:
-- When in doubt between FACTUAL and EMOTIONAL, prefer FACTUAL if a real-world state is implied
-- A statement can imply a fact even if phrased emotionally ("I've been arguing with my boyfriend a lot lately" implies there IS a boyfriend)
-- Statements beginning with "lately", "recently", "these days" strongly suggest current factual states
+Decision rules (apply in order):
+1. TENSE IS NOT THE TEST. Ask: has a decision been made, or is this still under consideration?
+   Certainty signals (→ FACTUAL even if future-tense): "decided", "signed/booked/accepted/bought",
+   "never again", "from now on", "always will", "all the way", "no going back", "I already know",
+   "there's no way", "no way I'm", "couldn't imagine", "I swear".
+   Uncertainty signals (→ HYPOTHETICAL): "thinking about", "considering", "might", "maybe",
+   "wish", "if I were", "I'd like to", "hoping", "probably", "not sure yet".
+   Note: "planning to" is ambiguous — treat as FACTUAL if it concerns a major life event
+   (retirement, relocation, marriage, having children) since these reflect a decided commitment;
+   treat as HYPOTHETICAL for routine near-future tasks ("planning to clean the garage").
+   When NEITHER signal is present: categorical/ongoing scope ("always", "never", "all the way",
+   "from now on", "anymore") → lean FACTUAL; one-time specific event → lean HYPOTHETICAL.
+
+2. EMOTIONAL → FACTUAL when the statement implies a real state change or condition.
+   "I love my new neighborhood" → FACTUAL if it implies they moved; EMOTIONAL if unchanged.
+   "I'm so relieved to be done with chemo" → FACTUAL (implies chemo ended).
+   Prefer FACTUAL over EMOTIONAL when any real-world state is implied.
+
+3. HYPOTHETICAL → FACTUAL when a wish or conditional reveals the user's CURRENT state by
+   referring to something they USED TO HAVE or DO (and no longer do).
+   "I miss my old apartment" / "I wish I still had my old job" → FACTUAL (no longer there).
+   NOT triggered by desires about things the user never had or can't obtain:
+   "I wish I could afford a house" → HYPOTHETICAL (financial obstacle, no past possession implied).
+   "I wish I were taller" → EMOTIONAL (permanent trait).
+
+4. "Lately", "recently", "these days", "now", "anymore", "no longer" strongly signal a current
+   real state → lean FACTUAL.
 """
 
 
