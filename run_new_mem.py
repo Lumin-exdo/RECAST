@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -85,6 +86,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=-1, help="Random seed for --n-samples shuffle (-1 = take first N, no shuffle)")
     parser.add_argument("--no-thinking", action="store_true", help="Disable chain-of-thought thinking for DeepSeek models")
     parser.add_argument("--uids", type=str, default="", help="Comma-separated list of UIDs to run (overrides --n-samples / --start-index)")
+    parser.add_argument("--workers", type=int, default=0, help="Parallel worker threads (0 = one per sample, 1 = serial)")
     return parser.parse_args()
 
 
@@ -117,26 +119,14 @@ def main() -> None:
     from MyMem.llm_layer.client import LLMClient
     from MyMem.new_pipeline import NewMemEngine
     from MyMem.core.new_config import NewConfig
+    from MyMem.retrieval.embedding import build_retriever
 
     default_extra: dict = {}
     if args.no_thinking:
         default_extra["extra_body"] = {"thinking": {"type": "disabled"}}
-    # LLM calls are always logged to {idx:04d}/.cache/ for live inspection (write-only, never read back).
-    # Pass --use-cache to also read from that directory, replaying cached responses.
-    llm = LLMClient(
-        model=model,
-        api_key=api_key,
-        base_url=base_url,
-        cache_dir=None,
-        log_dir=None,
-        default_extra_request_kwargs=default_extra or None,
-    )
-    engine = NewMemEngine(
-        llm=llm,
-        embedding_model_path=str(embedding_path),
-        embedding_device=args.embedding_device,
-        thresholds=NewConfig(),
-    )
+
+    # Build embedding model once; it's read-only and safe to share across threads.
+    shared_retriever = build_retriever(str(embedding_path), device=args.embedding_device)
 
     all_records = load_records(data_path)
     # Build uid→original_index map before any filtering so abs_idx is always the true dataset index
@@ -169,54 +159,53 @@ def main() -> None:
                 _random.Random(args.seed).shuffle(records_to_run)
             records_to_run = records_to_run[:args.n_samples]
 
-    print(f"Running {len(records_to_run)} samples with model={model}, session_mode={args.session_mode}")
+    n_workers = args.workers if args.workers > 0 else len(records_to_run)
+    print(f"Running {len(records_to_run)} samples with model={model}, session_mode={args.session_mode}, workers={n_workers}")
     print(f"Run dir: {run_dir}  [commit={commit}, run_name={args.run_name}]")
 
-    answers: List[Dict[str, Any]] = []
-
-    for idx, item in enumerate(records_to_run):
-        uid = str(item.get("uid", f"item_{idx}"))
-        if uid in uid_index_map:
-            abs_idx = uid_index_map[uid]
-        elif args.sample_index >= 0:
-            abs_idx = args.sample_index
-        else:
-            abs_idx = args.start_index + idx
-        print(f"  [{idx+1}/{len(records_to_run)}] uid={uid} type={item.get('type', '?')} ...", end="", flush=True)
+    def _run_one(item: Dict[str, Any], abs_idx: int) -> Dict[str, Any]:
+        uid = str(item.get("uid", f"item_{abs_idx}"))
+        print(f"  [start] uid={uid} abs_idx={abs_idx}", flush=True)
 
         sample_dir = run_dir / f"{abs_idx:04d}"
         sample_dir.mkdir(exist_ok=True)
-        llm.log_dir = sample_dir / ".cache"
-        llm.log_dir.mkdir(exist_ok=True)
-        if args.use_cache:
-            llm.cache_dir = sample_dir / ".cache"
-        else:
-            llm.cache_dir = None
+        log_dir = sample_dir / ".cache"
+        log_dir.mkdir(exist_ok=True)
 
-        if hasattr(llm, "reset_usage_tracking"):
-            llm.reset_usage_tracking()
+        # Each worker gets its own LLMClient and engine to avoid shared mutable state.
+        worker_llm = LLMClient(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            cache_dir=sample_dir / ".cache" if args.use_cache else None,
+            log_dir=log_dir,
+            default_extra_request_kwargs=default_extra or None,
+        )
+        worker_engine = NewMemEngine(
+            llm=worker_llm,
+            thresholds=NewConfig(),
+            retriever=shared_retriever,
+        )
 
         t0 = time.perf_counter()
         try:
-            result = engine.run_sample(
+            result = worker_engine.run_sample(
                 item,
                 sample_index=abs_idx,
                 session_mode=args.session_mode,
             )
             elapsed = time.perf_counter() - t0
-            print(f" done ({elapsed:.1f}s)")
+            print(f"  [done]  uid={uid} ({elapsed:.1f}s)", flush=True)
         except Exception as exc:
             elapsed = time.perf_counter() - t0
-            print(f" ERROR: {exc} ({elapsed:.1f}s)")
+            print(f"  [ERROR] uid={uid} {exc} ({elapsed:.1f}s)", flush=True)
             result = {"error": str(exc), "query_logs": {}}
 
         query_logs = result.get("query_logs", {})
-        dim_meta: Dict[str, Any] = {}
         responses: Dict[str, str] = {}
-
+        dim_meta: Dict[str, Any] = {}
         for dim_key in ("dim1", "dim2", "dim3"):
-            label = f"{dim_key}_query"
-            qlog = query_logs.get(label, {})
+            qlog = query_logs.get(f"{dim_key}_query", {})
             answer_text = ""
             if isinstance(qlog, dict):
                 answer_text = str(qlog.get("answer", "")).strip()
@@ -224,17 +213,14 @@ def main() -> None:
                     inner = qlog.get("answer", {})
                     if isinstance(inner, dict):
                         answer_text = str(inner.get("answer", "")).strip()
-
             responses[f"{dim_key}_response"] = answer_text
             dim_meta[f"{dim_key}_meta"] = {
                 "elapsed_seconds": float(qlog.get("elapsed_seconds", 0.0)) if isinstance(qlog, dict) else 0.0,
                 "usage": {},
             }
 
-        call_records = llm.get_call_records() if hasattr(llm, "get_call_records") else []
-        usage_summary = {}
-        if hasattr(llm, "get_usage_summary"):
-            usage_summary = llm.get_usage_summary()
+        call_records = worker_llm.get_call_records() if hasattr(worker_llm, "get_call_records") else []
+        usage_summary = worker_llm.get_usage_summary() if hasattr(worker_llm, "get_usage_summary") else {}
 
         answer_record = {
             "uid": uid,
@@ -245,13 +231,7 @@ def main() -> None:
             "type": item.get("type", ""),
             "elapsed_seconds": elapsed,
         }
-        answers.append(answer_record)
-
-        trace_record = {
-            "uid": uid,
-            "result": result,
-            "call_records": call_records,
-        }
+        trace_record = {"uid": uid, "result": result, "call_records": call_records}
 
         (sample_dir / "answer.json").write_text(
             json.dumps(answer_record, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -259,6 +239,25 @@ def main() -> None:
         (sample_dir / "trace.json").write_text(
             json.dumps(trace_record, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        return answer_record
+
+    # Build (item, abs_idx) list
+    indexed: List[tuple] = []
+    for seq_idx, item in enumerate(records_to_run):
+        uid = str(item.get("uid", f"item_{seq_idx}"))
+        if uid in uid_index_map:
+            abs_idx = uid_index_map[uid]
+        elif args.sample_index >= 0:
+            abs_idx = args.sample_index
+        else:
+            abs_idx = args.start_index + seq_idx
+        indexed.append((item, abs_idx))
+
+    answers: List[Dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = {executor.submit(_run_one, item, abs_idx): abs_idx for item, abs_idx in indexed}
+        for future in as_completed(futures):
+            answers.append(future.result())
 
     # Merge all answers into a single file for the scorer
     answers_path = run_dir / "answers.json"

@@ -26,15 +26,19 @@ class NewMemEngine(
         embedding_model_path: Optional[str] = None,
         embedding_device: str = "cpu",
         thresholds: Optional[NewConfig] = None,
+        retriever: Optional[BaseRetriever] = None,
     ):
         self.llm = llm
         self.thresholds = thresholds or NewConfig()
-        if not embedding_model_path:
+        if retriever is not None:
+            self.embedding: BaseRetriever = retriever
+        elif embedding_model_path:
+            self.embedding = build_retriever(embedding_model_path, device=embedding_device)
+        else:
             raise ValueError(
-                "embedding_model_path is required. Pass a local sentence-embedding model directory."
+                "Either embedding_model_path or retriever is required."
             )
         self.store = NewProfileStore()
-        self.embedding: BaseRetriever = build_retriever(embedding_model_path, device=embedding_device)
         self.chunk_bank: List[MemoryItem] = []
         self.delta_store: List[MemoryItem] = []
 
