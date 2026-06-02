@@ -5,9 +5,8 @@ import json
 import os
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,9 +14,20 @@ if __package__ in {None, ""}:
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_PATH = BASE_DIR.parent / "STALE" / "STALE" / "outputs" / "STALE_MAIN.json"
 DEFAULT_EMBEDDING_MODEL_PATH = BASE_DIR.parent / "STALE" / "cup_mem" / "models" / "all-MiniLM-L6-v2"
-DEFAULT_OUTPUT_ROOT = BASE_DIR / "runs_new_mem"
+DEFAULT_RUNS_ROOT = BASE_DIR / "runs"
 DEFAULT_ENV_FILE = BASE_DIR.parent / "STALE" / "STALE" / ".env"
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+
+def get_git_commit() -> str:
+    import subprocess
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(BASE_DIR), "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        return "unknown"
 
 
 def load_env_file(path: Path) -> None:
@@ -66,10 +76,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-index", type=int, default=-1, help="Run single sample at this index (-1 = run n-samples)")
     parser.add_argument("--type", type=str, default="all", choices=["T1", "T2", "all"], help="Filter by sample type")
     parser.add_argument("--session-mode", type=str, default="full", choices=["full", "relevant_only"])
-    parser.add_argument("--output-root", type=str, default=str(DEFAULT_OUTPUT_ROOT))
+    parser.add_argument("--run-name", type=str, default="default", help="Experiment label (e.g. reeval_failing, full_T1)")
     parser.add_argument("--start-index", type=int, default=0, help="Slice start (inclusive)")
     parser.add_argument("--end-index", type=int, default=-1, help="Slice end (exclusive, -1=all)")
-    parser.add_argument("--cache-dir", type=str, default="", help="Shared LLM cache dir (optional, overrides per-run cache)")
+    parser.add_argument("--use-cache", action="store_true", help="Enable per-sample LLM cache at {idx:04d}/.cache/ (default: no cache)")
     parser.add_argument("--embedding-model-path", type=str, default="")
     parser.add_argument("--embedding-device", type=str, default="cpu")
     parser.add_argument("--seed", type=int, default=-1, help="Random seed for --n-samples shuffle (-1 = take first N, no shuffle)")
@@ -100,23 +110,23 @@ def main() -> None:
     if not embedding_path.exists():
         raise FileNotFoundError(f"Embedding model not found: {embedding_path}")
 
-    output_root = Path(args.output_root).resolve()
-    run_dir = output_root / datetime.now().strftime("%Y%m%d_%H%M%S")
+    commit = get_git_commit()
+    run_dir = DEFAULT_RUNS_ROOT / commit / args.run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
     from MyMem.llm_layer.client import LLMClient
     from MyMem.new_pipeline import NewMemEngine
     from MyMem.core.new_config import NewConfig
 
-    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else run_dir / ".cache"
     default_extra: dict = {}
     if args.no_thinking:
         default_extra["extra_body"] = {"thinking": {"type": "disabled"}}
+    # Cache disabled by default. Use --use-cache to enable (stored per-sample at {idx:04d}/.cache/).
     llm = LLMClient(
         model=model,
         api_key=api_key,
         base_url=base_url,
-        cache_dir=cache_dir,
+        cache_dir=None,
         default_extra_request_kwargs=default_extra or None,
     )
     engine = NewMemEngine(
@@ -127,19 +137,21 @@ def main() -> None:
     )
 
     all_records = load_records(data_path)
+    # Build uid→original_index map before any filtering so abs_idx is always the true dataset index
+    uid_to_original_idx: dict = {str(r.get("uid", "")): i for i, r in enumerate(all_records)}
 
     if args.type != "all":
         all_records = [r for r in all_records if r.get("type") == args.type]
 
-    uid_index_map: dict = {}  # uid → original index in all_records (for abs_idx)
+    uid_index_map: dict = {}  # uid → original dataset index (for abs_idx / sample_dir naming)
     if args.uids:
         target_uids = {u.strip() for u in args.uids.split(",") if u.strip()}
         records_to_run = []
-        for global_i, r in enumerate(all_records):
+        for r in all_records:
             uid_str = str(r.get("uid", ""))
             if any(uid_str.startswith(u) for u in target_uids):
                 records_to_run.append(r)
-                uid_index_map[uid_str] = global_i
+                uid_index_map[uid_str] = uid_to_original_idx[uid_str]
         if not records_to_run:
             raise ValueError(f"No records matched UIDs: {target_uids}")
     elif args.sample_index >= 0:
@@ -156,12 +168,9 @@ def main() -> None:
             records_to_run = records_to_run[:args.n_samples]
 
     print(f"Running {len(records_to_run)} samples with model={model}, session_mode={args.session_mode}")
-    print(f"Output dir: {run_dir}")
+    print(f"Run dir: {run_dir}  [commit={commit}, run_name={args.run_name}]")
 
     answers: List[Dict[str, Any]] = []
-    traces: List[Dict[str, Any]] = []
-    answers_path = run_dir / "answers.json"
-    traces_path = run_dir / "traces.json"
 
     for idx, item in enumerate(records_to_run):
         uid = str(item.get("uid", f"item_{idx}"))
@@ -172,6 +181,12 @@ def main() -> None:
         else:
             abs_idx = args.start_index + idx
         print(f"  [{idx+1}/{len(records_to_run)}] uid={uid} type={item.get('type', '?')} ...", end="", flush=True)
+
+        sample_dir = run_dir / f"{abs_idx:04d}"
+        sample_dir.mkdir(exist_ok=True)
+        if args.use_cache:
+            llm.cache_dir = sample_dir / ".cache"
+            llm.cache_dir.mkdir(exist_ok=True)
 
         if hasattr(llm, "reset_usage_tracking"):
             llm.reset_usage_tracking()
@@ -232,15 +247,21 @@ def main() -> None:
             "result": result,
             "call_records": call_records,
         }
-        traces.append(trace_record)
 
-        # Per-sample incremental write — answers only (traces written at end)
-        answers_path.write_text(json.dumps(answers, ensure_ascii=False, indent=2), encoding="utf-8")
+        (sample_dir / "answer.json").write_text(
+            json.dumps(answer_record, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (sample_dir / "trace.json").write_text(
+            json.dumps(trace_record, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
-    traces_path.write_text(json.dumps(traces, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Merge all answers into a single file for the scorer
+    answers_path = run_dir / "answers.json"
+    answers_path.write_text(json.dumps(answers, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"\nDone. Answers: {answers_path}")
-    print(f"Traces: {traces_path}")
+    print(f"\nDone. {run_dir}/")
+    print(f"  Per-sample: {run_dir}/{{idx:04d}}/answer.json + trace.json")
+    print(f"  Merged for scorer: {answers_path}")
     print(f"\nTo evaluate:")
     print(f"  cd /home/lumin_exdo/STALE/STALE/Evaluation")
     print(f"  python full_eval_performance.py \\")
