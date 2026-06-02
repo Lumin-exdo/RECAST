@@ -257,7 +257,7 @@ class NewSessionWriterMixin:
         pool_threshold = getattr(cfg, "pool_trigger_threshold", 0.75) if cfg else 0.75
 
         target_id = str(judgment.get("target_item_id", "")).strip()
-        confidence = float(judgment.get("confidence", 0.0))
+        confidence = float(judgment.get("confidence") or 0.0)
         jtype = str(judgment.get("type", "")).strip()
         inference_chain = str(judgment.get("inference_chain", "")).strip()
 
@@ -309,7 +309,7 @@ class NewSessionWriterMixin:
             item.evidence_pool.append(evidence)
 
             synthesis = self._synthesize_pool(item)
-            synthesized_confidence = float(synthesis.get("synthesized_confidence", 0.0))
+            synthesized_confidence = float(synthesis.get("synthesized_confidence") or 0.0)
             item.pool_confidence = synthesized_confidence
 
             if synthesized_confidence >= pool_threshold:
