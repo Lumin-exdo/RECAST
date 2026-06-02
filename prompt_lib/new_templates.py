@@ -103,53 +103,76 @@ a false positive (storing a mildly redundant fact). When in doubt, trigger=true.
 """
 
 
-IMPACT_HYPOTHESIS_PROMPT = """You are a detective trying to figure out what has CHANGED in this user's life.
+IMPACT_HYPOTHESIS_PROMPT = """You are a detective reconstructing everything that has changed in this user's life.
 
 New statement: {statement}
 
-Current user profile summary:
+Current user profile summary (specific facts about this particular user):
 {global_impression}
 
-Your task — two steps:
+Work through two internal steps, then output your hypotheses.
 
-STEP 1 — REASON FIRST (do not output this):
-Ask yourself: if this statement is true, what does it IMPLY about the user's current reality?
-Chain your reasoning outward. Think about:
-- Physical environment: where must the user be? what can they access? what's impossible where they are?
-- Legal/administrative status: what paperwork, rights, or obligations does this situation imply?
-- Relationship/social structure: who is in or out of the user's life now?
-- Financial/occupational reality: what income, schedule, or constraints does this imply?
-- Physical capability: what can or can't the user do physically given this situation?
-Then ask: what PREVIOUSLY STORED beliefs about this user would CONFLICT with that implied reality?
+STEP 1 — DERIVE INTERMEDIATE STATES (do not output this reasoning):
+What does this statement NECESSARILY imply about the user's current reality?
+Think across four dimensions:
 
-STEP 2 — OUTPUT hypotheses: things that USED TO BE TRUE but are now probably wrong.
-Each hypothesis is a candidate memory to search for and check.
+TEMPORAL: What time windows are now blocked, required, or shifted?
+  (must sleep before X, unavailable after Y pm, schedule has fundamentally changed)
+
+PHYSICAL / SPATIAL: What locations, tools, or objects are now inaccessible or obsolete?
+  (no longer at that address, equipment no longer used, living space has changed)
+
+ECONOMIC: What financial commitments, costs, or resources have changed?
+  (monthly expense started or ended, income source changed, purchase behavior changed)
+
+ENABLING CONTEXT: What background conditions that other habits depend on have changed?
+  (pet care arrangement changed, shared resources no longer shared, delivery address changed,
+   internet/infrastructure access changed)
+
+STEP 2 — CROSS-REFERENCE WITH PROFILE (do not output this reasoning):
+Read the profile summary above. For EACH detail it mentions, ask:
+"Does any intermediate state from Step 1 conflict with this detail — even indirectly?"
+
+Be aggressive. If you can trace a 2-3 step chain from an intermediate state to a profile detail,
+generate the hypothesis. A tenuous connection is worth surfacing; the next step will verify it.
+Going through economic status is allowed: behavior → financial change → stored financial belief.
+
+STEP 3 — OUTPUT your hypotheses.
 
 Output JSON only:
 {
   "hypothetical_impacts": [
-    "short statement describing what used to be true about the user but might now be outdated"
+    "short description of what used to be true about the user but might now be outdated"
   ]
 }
 
 Rules:
-- Generate 4-8 hypotheses. More is better. Being wrong is fine — the next step will verify.
-- MANDATORY: include at least 2 non-obvious, multi-hop hypotheses. Surface-only is not enough.
-  Bad (surface): "user recently changed jobs"
-  Good (multi-hop): "user is not required to hold US citizenship or pass a security clearance"
-  Bad (surface): "user went to a religious event"
-  Good (multi-hop): "user identifies as [previous religion]" or "user is not a practicing Catholic"
-- Hypotheses must be PAST-TENSE BELIEFS ("user used to X", "user was X", "user had X").
-  NOT current observations. NOT future plans. Only things that might now be OUTDATED.
-- Generate competing, contradictory hypotheses freely — they don't need to be consistent.
-- Use the profile summary to target specific stored facts.
-  If summary mentions a specific place and the statement implies a very different climate or geography → generate "user lives in [that place]".
-  If summary mentions "permanent resident" and statement implies federal employment → generate "user is comfortable staying a permanent resident / not pursuing citizenship".
-- Think about SYSTEMIC CONSEQUENCES, not just the immediate event:
-  inheriting property from a family member → now a homeowner → "user rents their home" is now wrong
-  federal job offer → federal jobs require security clearance → clearance requires citizenship → "user is not pursuing citizenship" is now wrong
-  removing a hedge → the sound barrier it provided is gone → "noise from highway is blocked by vegetation" is now wrong
-  parka from back of closet → cold climate → contradicts any stored belief about warm/humid climate
+- Generate 6-10 hypotheses. Err on the side of more — false positives cost almost nothing,
+  false negatives mean a stale memory goes undetected.
+- Each hypothesis must describe a PAST OR CURRENT BELIEF that might now be wrong.
+  NOT observations about what is currently true. NOT plans. Only things that might be OUTDATED.
+- Prioritize hypotheses that target SPECIFIC details from the profile summary.
+  Weak (too generic): "user had a different daily routine"
+  Strong (profile-targeted): "user logged into the gaming forum most evenings"
+- Include hypotheses from at least two different dimensions (temporal, physical, economic, enabling).
+- Competing or contradictory hypotheses are fine — generate freely.
+
+Example of bold cross-referencing:
+  New statement: "I've started a pre-dawn work shift at the bakery — phone in the kitchen after dinner,
+                  in bed by nine so I'm out the door before sunrise."
+  Profile mentions: logs into retro gaming forum most nights, meets friends 4 evenings a week,
+                   Tuesday night trivia at a bar, streaming subscriptions for late-night watching.
+
+  Conservative (too narrow):
+  - "user had a different work schedule"
+
+  Bold (cross-referenced with profile):
+  - "user was able to stay up past 10pm on weeknights" (temporal)
+  - "user logged into the retro gaming forum most evenings" (temporal × profile: forum habit)
+  - "user met friends for evening outings multiple nights per week" (temporal × profile: social life)
+  - "user attended a weekly Tuesday night trivia event at a bar" (temporal × profile: specific activity)
+  - "user used streaming services for late-night entertainment" (temporal × profile: subscriptions)
+  - "user's phone was available for calls and notifications after 9pm" (enabling context)
 """
 
 
@@ -157,7 +180,8 @@ ABDUCTIVE_JUDGMENT_PROMPT = """For each candidate memory, judge whether a user's
 
 New statement from user: {statement}
 
-Supporting impact hypotheses (what this statement might invalidate):
+Supporting impact hypotheses (derived by reasoning from the statement through intermediate states,
+then cross-referencing with the user's profile — use these as reasoning bridges):
 {hypotheses}
 
 Candidate memories to evaluate:
@@ -165,6 +189,8 @@ Candidate memories to evaluate:
 
 For each candidate, reason using abductive inference: if the user's statement is true, does this memory remain valid?
 Multi-hop reasoning is expected — the statement and memory may share no keywords but still conflict.
+When the statement and a candidate seem topically unrelated, check whether any hypothesis above
+provides the intermediate step that connects them.
 
 Output JSON only:
 {
