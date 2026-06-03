@@ -2,6 +2,8 @@
 
 **Retroactive Evidence-based Conflict-Aware State Tracking**
 
+[中文版](README_CN.md)
+
 RECAST is a schema-free memory system for LLM agents that automatically detects when stored beliefs become stale. When a user shares new information, RECAST reasons backwards to identify which existing memories it contradicts — without requiring a predefined schema or manual memory management.
 
 ## Key Ideas
