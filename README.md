@@ -1,63 +1,83 @@
-# CUP-Mem
+# RECAST
 
-This directory contains the CUP-Mem code.
-CUP-Mem is a structured memory pipeline for session-by-session profile updates
-and conflict-aware query answering.
+**Retroactive Evidence-based Conflict-Aware State Tracking**
 
-## Requirements
+RECAST is a schema-free memory system for LLM agents that automatically detects when stored beliefs become stale. When a user shares new information, RECAST reasons backwards to identify which existing memories it contradicts — without requiring a predefined schema or manual memory management.
 
-Core runtime dependencies:
+## Key Ideas
 
-- Python 3.10+
-- `openai`
-- `httpx`
-- `torch`
-- `transformers`
+Standard memory systems for agents face a core problem: users' lives change, but stored memories do not. A memory written in January ("lives in San Francisco") may be silently wrong by March ("just signed a lease in Toronto"). Most systems either ignore this or require explicit updates from the user.
 
-CUP-Mem expects an OpenAI-compatible chat endpoint or Responses endpoint for
-LLM calls, and a local sentence embedding model directory for retrieval. The
-experiments used a local `all-MiniLM-L6-v2` model. No API keys or model weights
-are included in this package.
+RECAST addresses this through **abductive conflict detection**:
 
-Install minimal dependencies with:
+1. When a new statement arrives, RECAST generates *impact hypotheses* — what would have had to be true *before* for this statement to represent a change?
+2. Each hypothesis is tested against stored memories via **abductive judgment**, which infers whether the new evidence weakens or invalidates an existing belief.
+3. Evidence accumulates in a per-memory **pool**. When pool confidence crosses a threshold, the memory is marked *stale* (definitively outdated) or *uncertain* (weakened but unconfirmed).
+4. At query time, a **premise check** identifies whether the question rests on a false or outdated assumption, and answer generation incorporates a compressed **profile summary** to resolve ambiguity.
 
-```bash
-pip install -r requirements.txt
+## Pipeline
+
+```
+statement_extraction
+      ↓
+hypothetical_filter       ← removes hypotheticals, keeps factual assertions
+      ↓
+impact_hypothesis         ← generates "what was previously true?" hypotheses
+      ↓
+abductive_judgment        ← tests hypotheses against stored memories
+      ↓
+pool_synthesis            ← accumulates evidence, decides stale/uncertain/active
+      ↓
+impression_update         ← maintains compressed global profile summary
+      ↓
+  [ query time ]
+      ↓
+premise_check             ← flags outdated assumptions in incoming queries
+      ↓
+answer_generation         ← responds using current memory state + profile summary
 ```
 
-The minimal runner uses:
+## Evaluation
 
-- `STALE/.env`
-- `STALE/outputs/*_MAIN.json`
-- `cup_mem/models/all-MiniLM-L6-v2`
+Evaluated on [STALE](https://github.com/STALEproj/STALE) — a benchmark designed to test whether memory systems correctly handle temporal conflicts in user profiles.
 
-`run_cup_mem.py` loads `STALE/.env` automatically and uses
-`cup_mem/models/all-MiniLM-L6-v2` automatically when that directory exists.
+- **T1**: Direct conflicts (a new fact directly contradicts a stored memory)
+- **T2**: Indirect chained conflicts (new facts imply contradictions through multi-hop reasoning)
+- **dim1**: Recall — does the system know the old memory is stale?
+- **dim2**: Adversarial probe — does the system resist questions that assume the stale memory is still true?
+- **dim3**: Action compliance — does the system act on the current state, not the stale one?
 
-## Minimal runner
-
-Generate a demo split first:
+## Setup
 
 ```bash
-cd STALE
+git clone https://github.com/Lumin-exdo/RECAST.git
+cd RECAST
+python -m venv venv && source venv/bin/activate
+pip install openai sentence-transformers numpy
+
 cp .env.example .env
-python Generation/StepALL_IC_gen.py \
-  --seed-file data/ontology_seeds_demo5.json \
-  --output-name demo_T1 \
-  --conflict-type T1 \
-  --output-dir outputs \
-  --num-workers 1
+# Fill in TARGET_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL in .env
 ```
 
-Then run one sample from the repository root:
+Download the STALE dataset and embedding model separately (see STALE repo).
+
+## Running
 
 ```bash
-python -m cup_mem.run_cup_mem \
-  --data-path STALE/outputs/demo_T1_MAIN.json \
-  --sample-index 0 \
-  --session-mode relevant_only
+# From the parent directory of RECAST/
+python -m RECAST.run_new_mem \
+  --data-path /path/to/STALE_MAIN.json \
+  --embedding-model-path /path/to/all-MiniLM-L6-v2 \
+  --run-name my_run \
+  --uids uid1,uid2,uid3 \
+  --workers 10 \
+  --no-thinking
 ```
 
-Use `--session-mode full` for the full 50-session context. If the embedding
-model is stored outside `cup_mem/models/all-MiniLM-L6-v2`, pass
-`--embedding-model-path` explicitly.
+Results are written to `RECAST/runs/{commit}/{run-name}/{sample_idx}/answer.json`.
+
+## Notes
+
+- `--no-thinking` is required for DeepSeek models (v4-flash/v4-pro default to thinking=enabled)
+- `--workers` should be tuned to available RAM (~8GB per parallel sample)
+- Results from multiple machines can be merged by using `--commit-override` to force a consistent run path
