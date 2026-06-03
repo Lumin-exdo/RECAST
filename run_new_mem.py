@@ -87,6 +87,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-thinking", action="store_true", help="Disable chain-of-thought thinking for DeepSeek models")
     parser.add_argument("--uids", type=str, default="", help="Comma-separated list of UIDs to run (overrides --n-samples / --start-index)")
     parser.add_argument("--workers", type=int, default=0, help="Parallel worker threads (0 = one per sample, 1 = serial)")
+    parser.add_argument("--commit-override", type=str, default="", help="Override git commit hash used in run directory path (e.g. 7094eb6)")
     return parser.parse_args()
 
 
@@ -112,7 +113,7 @@ def main() -> None:
     if not embedding_path.exists():
         raise FileNotFoundError(f"Embedding model not found: {embedding_path}")
 
-    commit = get_git_commit()
+    commit = args.commit_override.strip() if args.commit_override.strip() else get_git_commit()
     run_dir = DEFAULT_RUNS_ROOT / commit / args.run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
