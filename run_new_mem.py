@@ -121,6 +121,7 @@ def main() -> None:
 
     if args.run_dir:
         run_dir = Path(args.run_dir).resolve()
+        commit = run_dir.parent.name  # infer from path for display only
     else:
         commit = args.commit_override.strip() if args.commit_override.strip() else get_git_commit()
         run_dir = DEFAULT_RUNS_ROOT / commit / args.run_name
