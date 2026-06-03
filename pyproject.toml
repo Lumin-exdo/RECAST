@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "amber-mem"
+name = "recast-mem"
 version = "0.1.0"
-description = "AMBER: Abductive Memory with Belief Evolution and Reasoning — schema-free memory system for LLM agents with automatic staleness detection"
+description = "RECAST: Retroactive Evidence-based Conflict-Aware State Tracking — schema-free memory system for LLM agents with automatic staleness detection"
 requires-python = ">=3.10"
 dependencies = [
     "openai>=1.0",
@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.scripts]
-amber-run = "AMBER.run_new_mem:main"
+recast-run = "RECAST.run_new_mem:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["AMBER*"]
+include = ["RECAST*"]

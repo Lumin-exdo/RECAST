@@ -120,10 +120,10 @@ def main() -> None:
     run_dir = DEFAULT_RUNS_ROOT / commit / args.run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    from AMBER.llm_layer.client import LLMClient
-    from AMBER.new_pipeline import NewMemEngine
-    from AMBER.core.new_config import NewConfig
-    from AMBER.retrieval.embedding import build_retriever
+    from RECAST.llm_layer.client import LLMClient
+    from RECAST.new_pipeline import NewMemEngine
+    from RECAST.core.new_config import NewConfig
+    from RECAST.retrieval.embedding import build_retriever
 
     default_extra: dict = {}
     if args.no_thinking:

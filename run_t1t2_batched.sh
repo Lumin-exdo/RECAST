@@ -51,7 +51,7 @@ for i in "${!BATCHES[@]}"; do
   BATCH_NUM=$((i+1))
   log "Batch $BATCH_NUM/$TOTAL: $BATCH"
   cd /home/lumin_exdo
-  if $PY -m AMBER.run_new_mem \
+  if $PY -m RECAST.run_new_mem \
        --run-name "$RUN_NAME" \
        --uids "$BATCH" \
        --workers 2 \

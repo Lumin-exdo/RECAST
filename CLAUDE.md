@@ -1,10 +1,10 @@
-# AMBER — Claude Code Instructions
+# RECAST — Claude Code Instructions
 
 ## Project
 NewMem is a schema-free memory system for LLM agents implementing abductive conflict detection. It is evaluated on the STALE benchmark (400 samples, T1=direct conflict, T2=indirect chained conflict; dims: dim1=recall, dim2=adversarial probe, dim3=action compliance).
 
-**Working directory for all commands:** `/home/lumin_exdo` (not inside AMBER)
-**Run command:** `python -m AMBER.run_new_mem`
+**Working directory for all commands:** `/home/lumin_exdo` (not inside RECAST)
+**Run command:** `python -m RECAST.run_new_mem`
 **Python env:** whichever env has `openai` installed (on WSL: `/home/lumin_exdo/miniconda3/envs/cupmem/bin/python`; on server: verify with `which python` or check env)
 **Dataset:** `STALE/STALE/outputs/STALE_MAIN.json`
 **Embedding model:** `STALE/cup_mem/models/all-MiniLM-L6-v2` (or download equivalent on server)
@@ -44,7 +44,7 @@ When a sample fails:
 
 ```bash
 cd /home/lumin_exdo
-python -m AMBER.run_new_mem \
+python -m RECAST.run_new_mem \
   --run-name <name> \
   --uids <comma-separated UIDs> \
   --workers 2 \        # max safe on 32GB WSL; use batches of 2 with fresh process each time

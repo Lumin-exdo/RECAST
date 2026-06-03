@@ -122,7 +122,7 @@ for chunk in "0 100" "100 200" "200 300" "300 400"; do
     log "Launching relonly worker $worker_id: samples $start-$((end-1)) (${mem_avail}MB avail)"
     (
         cd "$WORK_DIR" && \
-        "$PYTHON_CUP" -m AMBER.run_new_mem \
+        "$PYTHON_CUP" -m RECAST.run_new_mem \
             --data-path "$DATA_PATH" \
             --session-mode relevant_only \
             --start-index "$start" \
@@ -222,7 +222,7 @@ for chunk in "0 50" "50 100"; do
     log "Launching full worker $worker_id: samples $start-$((end-1)) (${mem_avail}MB avail)"
     (
         cd "$WORK_DIR" && \
-        "$PYTHON_CUP" -m AMBER.run_new_mem \
+        "$PYTHON_CUP" -m RECAST.run_new_mem \
             --data-path "$DATA_PATH" \
             --session-mode full \
             --start-index "$start" \
