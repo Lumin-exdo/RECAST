@@ -50,14 +50,37 @@ class NewProfileStore:
     def get_all_items(self) -> List[MemoryItem]:
         return list(self._items.values())
 
-    def get_preference_anchors(self) -> List[str]:
-        """Return content of all active/uncertain lasting_preference and biographical memories.
-        Used to provide stable cross-reference targets to the hypothesis generator that the
-        compressed global_impression may have dropped."""
+    def get_preference_anchors(self, embedding=None) -> List[str]:
+        """Return content of active/uncertain lasting_preference, biographical, and
+        top social-reputation current_state memories for impact hypothesis cross-referencing.
+        Social-reputation current_state memories (e.g. 'people trust me with X') are
+        missed by default anchors but can invalidate just as strongly as preferences."""
         anchors = []
         for item in self._items.values():
-            if item.status in ("active", "uncertain") and item.category in ("lasting_preference", "biographical"):
+            if item.status in ("active", "uncertain") and item.category in (
+                "lasting_preference", "biographical"
+            ):
                 anchors.append(item.content)
+
+        if embedding is not None:
+            social_candidates = [
+                item for item in self._items.values()
+                if item.status in ("active", "uncertain") and item.category == "current_state"
+            ]
+            if social_candidates:
+                SOCIAL_REPUTATION_PROBE = (
+                    "user's social role, reputation, trust level, standing in a group "
+                    "or community, how others perceive or treat the user socially"
+                )
+                ranked = embedding.rank(
+                    query_text=SOCIAL_REPUTATION_PROBE,
+                    candidates=social_candidates,
+                    text_getter=lambda item: item.content,
+                    top_k=3,
+                )
+                for r in ranked:
+                    anchors.append(r["item"].content)
+
         return anchors
 
     def search_by_embedding(

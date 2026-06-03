@@ -38,6 +38,28 @@ IMPORTANT: Extract the factual core even when wrapped in emotional language:
   "I'm relieved we finally moved" → extract: "recently moved" (recent_change)
   "I can't believe the promotion finally came through" → extract: "received a promotion" (recent_change)
 
+BEHAVIORAL PATTERNS: When the statement describes a persistent pattern of how OTHERS
+behave toward the user, extract the BEHAVIORAL FACT — what they concretely do — not
+the user's emotional reaction.
+
+  "Whenever I bring up my side project at the neighborhood meetups, everyone quickly
+   changes the subject"
+  → Extract: "social group consistently avoids engaging with user's side project
+    at neighborhood gatherings" (current_state)
+  NOT: "user feels rejected about side project"
+
+  "My coworkers stopped including me in the informal Friday lunches after the
+   department moved floors"
+  → Extract: "coworkers no longer include user in informal lunch gatherings since
+    the department relocated" (current_state)
+  NOT: "user feels left out at work"
+
+ONLY apply this when:
+  — The behavior is a PERSISTENT PATTERN ("keep", "always", "never", "anymore",
+    "every time", habitual present tense, "no longer")
+  — It is SPECIFIC and OBSERVABLE (not vague generalizations like "everyone hates me")
+  — It reveals something meaningful about the user's SOCIAL ENVIRONMENT or STATUS
+
 Do NOT extract:
 - One-time events with no lasting consequence ("went to the cinema last weekend", "had lunch with a colleague")
 - Pure requests, questions, or task instructions
@@ -45,6 +67,36 @@ Do NOT extract:
 - Emotional reactions WITHOUT any factual claim ("I'm so stressed today", "I'm so tired of this weather")
 - Generic filler with no personal state content
 - Facts about the external world unrelated to the user's own situation
+
+TURN-LEVEL vs STATEMENT-LEVEL:
+The exclusion rule "Do NOT extract Pure requests, questions" applies at the STATEMENT
+level, not the TURN level. A user turn may contain both factual claims and questions.
+Extract factual claims from ALL parts of the turn — do not return an empty list for a
+turn simply because it also contains a question or request.
+
+EXTRACT (factual clause embedded in a question-containing turn):
+  Turn: "My lease in Portland ended last month and I moved in with my sister temporarily.
+        Any advice for making shared living work?"
+  → Extract: "user's lease in Portland ended; user is now living with sister" (recent_change)
+
+  Turn: "Since I started my apprenticeship at the bakery three weeks ago,
+        what kind of work shoes should I get?"
+  → Extract: "user started an apprenticeship at a bakery three weeks ago" (recent_change)
+
+  Turn: "Given my new standing desk setup I finally got installed, what ergonomic
+        habits should I build?"
+  → Extract: "user now has a standing desk setup" (current_state)
+
+DO NOT EXTRACT (assumption inside a rhetorical or self-questioning form):
+  Turn: "Is it true that I still prefer dark roast coffee?"
+  → No extraction — user is questioning their own preference, not asserting it.
+  Turn: "Why do I always procrastinate? Can I change this?"
+  → No extraction — "why do I" is rhetorical, not a factual assertion.
+
+Rule of thumb: if the factual content is in a subordinate clause introduced by
+"since", "now that", "given that", "after", "because" — extract it.
+If the entire sentence is a question about whether the user still has a trait/state
+("Is it true that...", "Do I still...", "Am I still...") — do NOT extract.
 
 Output JSON only:
 {
@@ -154,6 +206,27 @@ ENABLING CONTEXT: What background conditions that other habits depend on have ch
 
 SOCIAL: What relationships, shared activities, or social patterns have changed?
   (no longer seeing certain people, new social commitment, shared hobby added or dropped)
+
+LEGAL / OFFICIAL STATUS: When the statement mentions signing or submitting a specific
+document, completing a formal procedure at an official institution (bank, tax authority,
+government office, court, clerk's office, immigration office), or undergoing a formal
+assessment or registration:
+  Step A — Identify the TYPE: financial document, civic/identity form, legal instrument,
+    professional certification, or enrollment/registration process.
+  Step B — Reason about what STATUS CHANGE this transaction typically FINALIZES:
+    Financial document at bank or financial institution → may mean change in account
+      arrangement, loan status, declared income source, or financial beneficiary
+    Government office paperwork → may mean change in immigration status, marital status,
+      property ownership, civic enrollment, or legal standing
+    Legal instrument at official office → may mean change in a legal obligation,
+      contract status, or asset arrangement
+    Enrollment/registration → may mean change in educational status, professional
+      license, or organizational membership
+  Step C — Cross-reference with stored biographical/status memories: does any stored
+    memory assume a status (citizenship, residency, financial obligation, legal standing,
+    professional license) that this transaction might now challenge?
+  NOTE: Routine visits without a specific document signing (deposits, withdrawals,
+    asking questions) do NOT warrant this inference.
 
 STEP 2 — CROSS-REFERENCE (do not output this reasoning):
 Part A — Profile cross-reference:
@@ -343,8 +416,41 @@ Rules:
 - premise_safe=false with soft correction (uncertain, not stale) should say:
   "We're no longer certain that [old belief] is still true. [Helpful context on why]."
 - Trace indirect assumptions: if the question assumes X, and X depends on Y, and Y is stale/uncertain → unsafe
-- correction should be specific: name what changed or what is uncertain, not just "things have changed"
+- correction GROUNDING RULES (P4):
+  (1) Ground correction in the content of ACTIVE memories. Paraphrase what the active
+      memories say — do NOT copy stale_reason verbatim. stale_reason is an abductive
+      inference trace that may be imprecise or wrong; active memories are authoritative.
+  (2) A single direct-inference step from an active memory to the conclusion is allowed:
+      active: "user's new job ends at 9pm" → correction may say "new schedule affects
+      evenings." Do NOT chain through multiple unstated steps.
+  (3) Prefer the active memory MOST DIRECTLY related to the stale dimension.
+  (4) If no active memory explains the change: correction = "We know that [paraphrase of
+      stale fact] is no longer current, but we don't have information about what changed."
+      Do NOT invent a reason.
+  (5) NEVER echo stale_reason text verbatim into correction.
 - If no relevant memories exist at all, premise_safe=true (we don't know enough to say it's unsafe)
+
+CLOSING DEPENDENCY CHECK (mandatory — apply after populating outdated_facts):
+After identifying all presuppositions and populating outdated_facts, perform this
+final check for EACH item in outdated_facts:
+
+  Ask: "Does the question's central assumption DIRECTLY DEPEND on this item being
+        still true — such that if this item were false, the question's core premise
+        would be undermined?"
+
+If YES for ANY item: premise_safe MUST be False.
+
+"Directly depends" includes:
+  — The question explicitly asks about the same behavior/state as the stale item
+    ("what do you usually cook for your weekly meal prep?" depends on the meal-prepping habit)
+  — The question's action would be pointless or misleading without the stale item
+    ("what's the best route for your morning commute?" depends on the user still commuting)
+  — A 1-step inference: "what evening activities might you enjoy?" depends on evenings
+    being free, if the stale item is "evenings were mostly available"
+
+"Does NOT directly depend" (premise_safe may still be True):
+  — Stale item is tangentially related but the question remains valid without it
+  — The question is about a different dimension than the stale item
 """
 
 
@@ -385,6 +491,26 @@ Rules:
 - If current_impression is empty or "(empty — no profile yet)", build all four sections from scratch
   using only what is known from the new statements and memory changes
 - Focus on facts, not speculation
+
+[STATUS] OVERWRITE RULE — MANDATORY:
+[STATUS] is a current-state snapshot — it holds exactly ONE value per dimension.
+Never append an old and new value together in the same dimension.
+The four core [STATUS] dimensions: (1) Location / where user lives, (2) Employment /
+job / income source, (3) Health / medical condition, (4) Relationship / household status.
+
+When memory_changes lists a stale record whose content belongs to one of these four
+dimensions:
+  → IDENTIFY which dimension it belongs to
+  → SEARCH new_statements for the updated value for that dimension
+  → REPLACE the old [STATUS] content for that dimension — do NOT keep the old value
+  → If no replacement value is found: write "(currently unknown)" for that dimension
+
+Source rule: new [STATUS] content must come from new_statements.
+NEVER use stale_reason as the source — it is an inference trace and may be wrong.
+
+What does NOT trigger [STATUS] replacement: devices, subscriptions, memberships,
+or one-time visits/trips. Only records whose content is about the four core dimensions
+above should update [STATUS].
 """
 
 
@@ -419,10 +545,16 @@ Rules:
 - If premise_safe=true: Answer directly using active facts
 - When answering, prioritize active facts over uncertain facts
 - Never present stale information as currently true
-- Disambiguation: when multiple active facts seem to conflict on the same dimension
-  (e.g., multiple locations, multiple jobs), individual active facts from more recent sessions
-  take precedence. Use the profile summary as a tiebreaker and for broader context — not as
-  an override, since the summary may lag behind the most recent individual memories.
+- Disambiguation:
+  (1) When correction is non-empty (premise_safe=false): the correction is AUTHORITATIVE
+      for the specific dimension it addresses (e.g., if correction addresses location, use
+      correction's location over any conflicting profile_summary location claim). For all
+      other dimensions NOT addressed by correction, profile_summary remains valid.
+      Correction OVERRIDES profile_summary on its own dimension — not the other way around.
+  (2) When no correction, but multiple active facts conflict on the same dimension:
+      individual active facts from more recent sessions take precedence.
+  (3) Profile_summary is a compressed, potentially lagging snapshot. It should NEVER
+      override correction or recent individual active facts. Use it for context only.
 - If we lack sufficient information to answer well, say so honestly and ask a clarifying question
 - Keep the answer conversational and natural, as if you know this user well
 - Be specific and practical — use the actual facts we have, don't give generic answers

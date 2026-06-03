@@ -479,7 +479,8 @@ class NewSessionWriterMixin:
             )
 
         # Fetch once; stable within this session's PHASE C (no writes between C calls).
-        preference_anchors = self.store.get_preference_anchors()
+        # Pass embedding so social-reputation current_state memories are included.
+        preference_anchors = self.store.get_preference_anchors(embedding=self.embedding)
 
         # ── PHASE C: hypothesis + candidate search + judgment — all parallel ─
         def _process_triggered(i: int):
