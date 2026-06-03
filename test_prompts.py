@@ -1,6 +1,6 @@
 """
 Quick prompt unit tests for STATEMENT_EXTRACTOR and IMPACT_HYPOTHESIS.
-Run: python -m MyMem.test_prompts
+Run: python -m AMBER.test_prompts
 """
 from __future__ import annotations
 import os, sys, json
@@ -9,11 +9,11 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from MyMem.prompt_lib.new_templates import (
+from AMBER.prompt_lib.new_templates import (
     STATEMENT_EXTRACTOR_PROMPT,
     IMPACT_HYPOTHESIS_PROMPT,
 )
-from MyMem.llm_layer.client import LLMClient
+from AMBER.llm_layer.client import LLMClient
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_ENV_FILE = BASE_DIR.parent / "STALE" / "STALE" / ".env"

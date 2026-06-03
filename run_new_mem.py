@@ -16,7 +16,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_PATH = BASE_DIR.parent / "STALE" / "STALE" / "outputs" / "STALE_MAIN.json"
 DEFAULT_EMBEDDING_MODEL_PATH = BASE_DIR.parent / "STALE" / "cup_mem" / "models" / "all-MiniLM-L6-v2"
 DEFAULT_RUNS_ROOT = BASE_DIR / "runs"
-DEFAULT_ENV_FILE = BASE_DIR.parent / "STALE" / "STALE" / ".env"
+# Look for .env in project root first, then fall back to legacy STALE path
+DEFAULT_ENV_FILE = (BASE_DIR / ".env") if (BASE_DIR / ".env").exists() else BASE_DIR.parent / "STALE" / "STALE" / ".env"
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
@@ -88,12 +89,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--uids", type=str, default="", help="Comma-separated list of UIDs to run (overrides --n-samples / --start-index)")
     parser.add_argument("--workers", type=int, default=0, help="Parallel worker threads (0 = one per sample, 1 = serial)")
     parser.add_argument("--commit-override", type=str, default="", help="Override git commit hash used in run directory path (e.g. 7094eb6)")
+    parser.add_argument("--env-file", type=str, default="", help="Path to .env file with API keys (default: .env in project root)")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    load_env_file(DEFAULT_ENV_FILE)
+    env_path = Path(args.env_file).resolve() if args.env_file else DEFAULT_ENV_FILE
+    load_env_file(env_path)
 
     model = get_env("TARGET_MODEL")
     api_key = get_env("DEEPSEEK_API_KEY", "OPENAI_API_KEY")
@@ -117,10 +120,10 @@ def main() -> None:
     run_dir = DEFAULT_RUNS_ROOT / commit / args.run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    from MyMem.llm_layer.client import LLMClient
-    from MyMem.new_pipeline import NewMemEngine
-    from MyMem.core.new_config import NewConfig
-    from MyMem.retrieval.embedding import build_retriever
+    from AMBER.llm_layer.client import LLMClient
+    from AMBER.new_pipeline import NewMemEngine
+    from AMBER.core.new_config import NewConfig
+    from AMBER.retrieval.embedding import build_retriever
 
     default_extra: dict = {}
     if args.no_thinking:

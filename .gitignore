@@ -1,20 +1,18 @@
+# API keys — never commit
+.env
+
+# Run outputs (large)
+runs/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.claude/
-runs/
-runs_*/
-data/
-*.json.tmp
-models/
-.cache/
-.vscode/
+.eggs/
+*.egg-info/
+dist/
+build/
 
-analysis_output/
-
-# secrets
-.env
-*.env
-.env.local
-secrets.py
-
+# Logs
+*.log
+t1t2_batch_progress.log
