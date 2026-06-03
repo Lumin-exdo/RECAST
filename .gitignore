@@ -24,8 +24,6 @@ t1t2_batch_progress.log
 # Model weights (download separately)
 models/
 
-# Analysis outputs (generated, not source)
-analysis_output/
 
 # Data (download separately)
 data/
