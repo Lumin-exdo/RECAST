@@ -110,6 +110,65 @@ class NewProfileStore:
     def update_global_impression(self, impression: GlobalImpression) -> None:
         self.global_impression = impression
 
+    def from_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Restore store state from a to_snapshot() dict (for query-only reruns)."""
+        self._items = {}
+        max_item_num = 0
+        for status_key in ("active_items", "uncertain_items", "stale_items"):
+            for d in snapshot.get(status_key, []):
+                item = MemoryItem(
+                    item_id=d["item_id"],
+                    content=d["content"],
+                    status=d["status"],
+                    confidence=float(d.get("confidence", 0.85)),
+                    created_session=d.get("created_session", 0),
+                    created_time=d.get("created_time", ""),
+                    last_updated_session=d.get("last_updated_session", 0),
+                    last_updated_time=d.get("last_updated_time", ""),
+                    category=d.get("category", ""),
+                    pool_confidence=float(d.get("pool_confidence", 0.0)),
+                )
+                if d.get("stale_metadata"):
+                    sm = d["stale_metadata"]
+                    item.stale_metadata = StaleMetadata(
+                        stale_since_session=sm["stale_since_session"],
+                        stale_since_time=sm["stale_since_time"],
+                        stale_reason=sm.get("stale_reason", ""),
+                        superseded_by=sm.get("superseded_by", ""),
+                    )
+                for e_dict in d.get("evidence_pool", []):
+                    item.evidence_pool.append(Evidence(
+                        evidence_id=e_dict["evidence_id"],
+                        statement_text=e_dict["statement_text"],
+                        inference_chain=e_dict["inference_chain"],
+                        confidence=float(e_dict["confidence"]),
+                        session_index=e_dict["session_index"],
+                        session_time=e_dict["session_time"],
+                    ))
+                for v_dict in d.get("version_log", []):
+                    item.version_log.append(VersionEntry(
+                        session=v_dict["session"],
+                        time=v_dict["time"],
+                        from_status=v_dict["from_status"],
+                        to_status=v_dict["to_status"],
+                        reason=v_dict["reason"],
+                    ))
+                self._items[item.item_id] = item
+                try:
+                    num = int(item.item_id.replace("m_", ""))
+                    max_item_num = max(max_item_num, num)
+                except ValueError:
+                    pass
+        self._item_counter = max_item_num
+        gi = snapshot.get("global_impression", {})
+        if gi:
+            self.global_impression = GlobalImpression(
+                content=gi.get("content", ""),
+                last_updated_session=gi.get("last_updated_session", -1),
+                last_updated_time=gi.get("last_updated_time", ""),
+                update_log=list(gi.get("update_log", [])),
+            )
+
     def to_snapshot(self) -> Dict[str, Any]:
         items_by_status: Dict[str, List[Dict[str, Any]]] = {"active": [], "uncertain": [], "stale": []}
         for item in self._items.values():

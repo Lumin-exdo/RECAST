@@ -90,6 +90,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=0, help="Parallel worker threads (0 = one per sample, 1 = serial)")
     parser.add_argument("--startup-stagger", type=float, default=0.0, help="Seconds to wait between submitting each worker (avoids burst API load at startup)")
     parser.add_argument("--commit-override", type=str, default="", help="Override git commit hash used in run directory path (e.g. 7094eb6)")
+    parser.add_argument("--query-only", action="store_true", help="Skip session processing; restore store from existing trace.json and rerun queries only")
     parser.add_argument("--env-file", type=str, default="", help="Path to .env file with API keys (default: .env in project root)")
     return parser.parse_args()
 
@@ -194,11 +195,35 @@ def main() -> None:
 
         t0 = time.perf_counter()
         try:
-            result = worker_engine.run_sample(
-                item,
-                sample_index=abs_idx,
-                session_mode=args.session_mode,
-            )
+            # --query-only: restore store from existing trace snapshot, skip session phase
+            existing_trace_path = sample_dir / "trace.json"
+            if args.query_only and existing_trace_path.exists():
+                with existing_trace_path.open(encoding="utf-8") as _f:
+                    existing_trace = json.load(_f)
+                existing_result = existing_trace.get("result", {})
+                snapshot = existing_result.get("final_profile_snapshot", {})
+                if snapshot:
+                    worker_engine.store.from_snapshot(snapshot)
+                    # Run only the query phase
+                    probing_queries = item.get("probing_queries", {})
+                    query_logs: Dict[str, Any] = {}
+                    for label, query_text in probing_queries.items():
+                        qlog = worker_engine.answer_query(query_label=label, query_text=str(query_text))
+                        qlog["elapsed_seconds"] = 0.0
+                        query_logs[label] = qlog
+                    # Merge into existing result, preserving session_logs etc.
+                    existing_result["query_logs"] = query_logs
+                    existing_result["completed_query_count"] = len(query_logs)
+                    result = existing_result
+                    print(f"  [query-only] uid={uid} restored from snapshot, ran {len(query_logs)} queries", flush=True)
+                else:
+                    raise ValueError("No final_profile_snapshot in existing trace — cannot use --query-only")
+            else:
+                result = worker_engine.run_sample(
+                    item,
+                    sample_index=abs_idx,
+                    session_mode=args.session_mode,
+                )
             elapsed = time.perf_counter() - t0
             print(f"  [done]  uid={uid} ({elapsed:.1f}s)", flush=True)
         except Exception as exc:
