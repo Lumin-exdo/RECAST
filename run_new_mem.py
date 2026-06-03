@@ -90,6 +90,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=0, help="Parallel worker threads (0 = one per sample, 1 = serial)")
     parser.add_argument("--startup-stagger", type=float, default=0.0, help="Seconds to wait between submitting each worker (avoids burst API load at startup)")
     parser.add_argument("--commit-override", type=str, default="", help="Override git commit hash used in run directory path (e.g. 7094eb6)")
+    parser.add_argument("--run-dir", type=str, default="", help="Directly specify run directory (overrides commit+run-name path)")
     parser.add_argument("--query-only", action="store_true", help="Skip session processing; restore store from existing trace.json and rerun queries only")
     parser.add_argument("--env-file", type=str, default="", help="Path to .env file with API keys (default: .env in project root)")
     return parser.parse_args()
@@ -118,8 +119,11 @@ def main() -> None:
     if not embedding_path.exists():
         raise FileNotFoundError(f"Embedding model not found: {embedding_path}")
 
-    commit = args.commit_override.strip() if args.commit_override.strip() else get_git_commit()
-    run_dir = DEFAULT_RUNS_ROOT / commit / args.run_name
+    if args.run_dir:
+        run_dir = Path(args.run_dir).resolve()
+    else:
+        commit = args.commit_override.strip() if args.commit_override.strip() else get_git_commit()
+        run_dir = DEFAULT_RUNS_ROOT / commit / args.run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
     from RECAST.llm_layer.client import LLMClient
