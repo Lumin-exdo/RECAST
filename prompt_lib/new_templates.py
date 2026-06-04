@@ -328,6 +328,22 @@ Rules:
   0.35-0.5: weak signal, worth tracking in evidence pool
 - Biographical facts (grew up in X, born in Y, native language Z, has children) are extremely
   resistant to invalidation — only flag them if the conflict is direct and explicit (confidence >= 0.8).
+- recent_change memories (shown with category tag "recent_change") describe events that have
+  already occurred whose outcome is currently in effect. To invalidate a recent_change memory,
+  the new statement must explicitly contradict the factual outcome of that event. Behavioral
+  activity that is consistent with and expected given the new state is NOT evidence of
+  invalidation: researching cat food brands after adopting a cat, looking for vegan restaurants
+  after switching diet, setting up services after moving — these are expected concurrent
+  activities, not signals that the change was reversed. Do not flag recent_change items based
+  solely on indirect behavioral inference.
+- A statement about the user's CHARACTER, VALUES, or PERSONAL PRINCIPLES (e.g., "I value
+  self-reliance", "I believe in personal responsibility", "I prefer to handle things myself")
+  does NOT invalidate a recent_change memory that describes a specific institutional,
+  contractual, or externally-imposed outcome. Values and real-world outcomes can coexist: a
+  person who values autonomy may still be subject to a formal review process they didn't
+  choose; a person who prefers independence may still be bound by a condition imposed at an
+  institutional meeting. Only a direct statement that the specific situation ended or was
+  formally resolved justifies invalidating such a recent_change.
 - Do not hallucinate memory content — only judge the exact candidates provided
 - If the new statement actually CONFIRMS or STRENGTHENS a memory (not contradicts), type=no_conflict
 """

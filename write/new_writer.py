@@ -129,7 +129,7 @@ class NewSessionWriterMixin:
 
         hypotheses_text = "\n".join(f"- {h}" for h in hypotheses) if hypotheses else "- (none generated)"
         candidates_text = "\n".join(
-            f"[{item.item_id}] {item.content}" for item in candidates
+            f"[{item.item_id}] ({item.category}) {item.content}" for item in candidates
         )
 
         prompt = (
@@ -269,6 +269,11 @@ class NewSessionWriterMixin:
         item = self.store.get_item(target_id)
         if item is None or item.status == "stale":
             return {"action": "skip", "reason": "item not found or already stale"}
+
+        # Fix A: same-session items describe the new state introduced in this session;
+        # they cannot logically be made stale by statements from the same session.
+        if item.created_session == session_index:
+            return {"action": "skip", "reason": "same-session item — describes current state, not past"}
 
         log: Dict[str, Any] = {
             "target_item_id": target_id,
