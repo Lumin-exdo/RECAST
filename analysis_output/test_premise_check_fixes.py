@@ -180,8 +180,8 @@ def judge_direction_reversal(old_result: Dict, new_result: Dict, case_notes: str
     new_outdated = new_result.get("outdated_facts", [])
     old_safe = old_result.get("premise_safe")
     new_safe = new_result.get("premise_safe")
-    old_corr = old_result.get("correction", "")
-    new_corr = new_result.get("correction", "")
+    old_corr = str(old_result.get("correction") or "")
+    new_corr = str(new_result.get("correction") or "")
 
     lines = []
     lines.append(f"  premise_safe: {old_safe} → {new_safe}")
@@ -199,8 +199,8 @@ def judge_direction_reversal(old_result: Dict, new_result: Dict, case_notes: str
 def judge_active_vs_active(old_result: Dict, new_result: Dict) -> str:
     old_safe = old_result.get("premise_safe")
     new_safe = new_result.get("premise_safe")
-    old_corr = old_result.get("correction", "")
-    new_corr = new_result.get("correction", "")
+    old_corr = str(old_result.get("correction") or "")
+    new_corr = str(new_result.get("correction") or "")
 
     lines = []
     lines.append(f"  premise_safe: {old_safe} → {new_safe}")
@@ -279,8 +279,8 @@ def main():
             "type": failure_type,
             "old_safe": old_result.get("premise_safe"),
             "new_safe": new_result.get("premise_safe"),
-            "old_correction": old_result.get("correction", "")[:80],
-            "new_correction": new_result.get("correction", "")[:80],
+            "old_correction": str(old_result.get("correction") or "")[:80],
+            "new_correction": str(new_result.get("correction") or "")[:80],
             "old_outdated_count": len(old_result.get("outdated_facts", [])),
             "new_outdated_count": len(new_result.get("outdated_facts", [])),
         })
