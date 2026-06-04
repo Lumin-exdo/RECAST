@@ -69,120 +69,27 @@ Rules:
 """
 
 
-HYPOTHETICAL_FILTER_PROMPT = """Classify this user statement as FACTUAL, HYPOTHETICAL, or EMOTIONAL.
+HYPOTHETICAL_FILTER_PROMPT = """Decide whether a statement about a user should be stored in their memory profile.
 
-Statement: {statement}
+STORE is the default. Only SKIP when you are confident the statement contains
+no personal signal whatsoever about this user's life, identity, or situation.
 
-────────────────────────────────────────────────────────
-FACTUAL — asserts a real condition about the user: a completed event, an ongoing habit,
-a held identity/belief, or a COMMITTED future action (decided, not just considered).
-Tense alone does NOT determine this — a future-tense statement that expresses a
-definite commitment or identity is FACTUAL, not HYPOTHETICAL.
+SKIP only when the statement is clearly one of:
+  — a purely momentary feeling or mood with no factual claim about the user's
+    situation ("I'm so tired today", "I love this song right now")
+  — a fact about the external world with no implication for the user personally
+    ("It's raining", "the game was exciting")
+  — a direct request, question, or instruction to the assistant
 
-  Completed events / current states:
-    "I just relocated for work"
-    "My boyfriend and I broke up"
-    "I sold my car last month"
-    "I work at a startup now"
+Everything else — plans, interests, concerns, things the user is doing or
+considering, preferences, achievements, possessions, habits — should be STORE.
+Storing a temporary item costs little; missing a real personal fact is permanent.
 
-  Ongoing habits and identities:
-    "I've been going to therapy every week"
-    "I don't eat meat anymore"
-    "I've always considered myself an independent"
-
-  Definite commitments (future-tense but certain — no uncertainty markers):
-    "I'll be backing the same ticket all the way down the ballot"   ← political identity
-    "I'm never drinking again"                                      ← lifestyle commitment
-    "From now on I'm only eating organic"                           ← new habit
-    "I'm moving to Seattle next month — signed the lease"          ← completed precondition
-    "I've decided to go back to school"                             ← decision made
-    "I'll always support this team no matter what"                  ← identity/loyalty
-
-  "Used to" — reveals the CURRENT state by describing what has ended:
-    "I used to live in Austin"               → user no longer in Austin → FACTUAL
-    "I used to work nights"                  → shift schedule has changed → FACTUAL
-    "I used to be really into rock climbing" → no longer active in that hobby → FACTUAL
-    Rule: "used to [X]" ALWAYS implies user no longer does X → FACTUAL.
-
-  Implied facts (wish or conditional phrasing that reveals a current state):
-    "I miss my old apartment"          → user no longer lives there
-    "I wish I still had my old routine" → routine has changed
-    "I can't imagine going back to finance" → user is no longer in finance
-
-────────────────────────────────────────────────────────
-HYPOTHETICAL — the action or state is genuinely UNDECIDED or not yet committed.
-Signals: "thinking about", "considering", "might", "maybe", "probably", "wish I could",
-"if I were to", "I'd like to", "hoping to", "what if", "I could see myself".
-
-  Unconverted considerations:
-    "I've been thinking about switching jobs"   ← no decision made
-    "I'm considering going vegan"               ← still undecided
-    "I might apply to grad school"              ← uncertain
-
-  Explicit conditionals / thought experiments:
-    "If I were to move..."
-    "What if I changed careers?"
-
-  Desires about things outside the user's current reality (external obstacles, permanent traits):
-    "I wish I could afford a house"    ← financial constraint blocks it; the desire is not a commitment
-    "I'd love to be taller"            ← unfulfillable; not a state the user can enter
-
-  One-time near-future plans (not a life-state change):
-    "I'll call her tonight"
-    "I'm going to the grocery store later"
-
-────────────────────────────────────────────────────────
-EMOTIONAL — expresses feeling or attitude WITHOUT asserting a new factual condition;
-the user's real-world state is unchanged by the statement.
-
-    "I'm so tired of my commute"  (job and home location unchanged)
-    "I love spending time with my kids"  (no new fact about kids)
-    "This weather is incredible"
-
-────────────────────────────────────────────────────────
 Output JSON only:
 {
-  "type": "FACTUAL|HYPOTHETICAL|EMOTIONAL",
-  "reason": "one sentence explanation"
-}
-
-Decision rules (apply in order):
-1. TENSE IS NOT THE TEST. Ask: has a decision been made, or is this still under consideration?
-   Certainty signals (→ FACTUAL even if future-tense): "decided", "signed/booked/accepted/bought",
-   "never again", "from now on", "always will", "all the way", "no going back", "I already know",
-   "there's no way", "no way I'm", "couldn't imagine", "I swear", "I can tell you that",
-   "without question", "no doubt", "trust me on this", "there's no way I'm going back",
-   "would never", "I've been [not doing X] for [months/years]".
-   Note: "I haven't [done X] in [significant duration]" (months, years) signals an established
-   absence → FACTUAL (e.g., "I haven't had a drink in two years" → currently doesn't drink).
-   Uncertainty signals (→ HYPOTHETICAL): "thinking about", "considering", "might", "maybe",
-   "wish", "if I were", "I'd like to", "hoping", "probably", "not sure yet".
-   Note: "planning to" is ambiguous — treat as FACTUAL if it concerns a major life event
-   (retirement, relocation, marriage, having children) since these reflect a decided commitment;
-   treat as HYPOTHETICAL for routine near-future tasks ("planning to clean the garage").
-   When NEITHER signal is present: categorical/ongoing scope ("always", "never", "all the way",
-   "from now on", "anymore") → lean FACTUAL; one-time specific event → lean HYPOTHETICAL.
-
-2. "Used to" → FACTUAL. Any statement of the form "I used to [X]" asserts that the user
-   no longer does X — this is a real current state, not a hypothetical.
-   "I used to smoke" → FACTUAL (no longer smokes).
-   "I used to run marathons" → FACTUAL (no longer running marathons or at that level).
-
-3. EMOTIONAL → FACTUAL when the statement implies a real state change or condition.
-   "I love my new neighborhood" → FACTUAL if it implies they moved; EMOTIONAL if unchanged.
-   "I'm so relieved to be done with chemo" → FACTUAL (implies chemo ended).
-   Prefer FACTUAL over EMOTIONAL when any real-world state is implied.
-
-4. HYPOTHETICAL → FACTUAL when a wish or conditional reveals the user's CURRENT state by
-   referring to something they USED TO HAVE or DO (and no longer do).
-   "I miss my old apartment" / "I wish I still had my old job" → FACTUAL (no longer there).
-   NOT triggered by desires about things the user never had or can't obtain:
-   "I wish I could afford a house" → HYPOTHETICAL (financial obstacle, no past possession implied).
-   "I wish I were taller" → EMOTIONAL (permanent trait).
-
-5. "Lately", "recently", "these days", "now", "anymore", "no longer" strongly signal a current
-   real state → lean FACTUAL.
-"""
+  "decision": "STORE|SKIP",
+  "reason": "one sentence"
+}"""
 
 
 TRIGGER_GATE_PROMPT = """Decide whether this user statement should be stored in the user's memory profile.

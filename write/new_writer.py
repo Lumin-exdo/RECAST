@@ -66,8 +66,8 @@ class NewSessionWriterMixin:
 
     def _is_factual(self, statement: str) -> Dict[str, Any]:
         result = self._safe_call_json(
-            HYPOTHETICAL_FILTER_PROMPT.replace("{statement}", statement),
-            "Classify the statement above.",
+            HYPOTHETICAL_FILTER_PROMPT,
+            f"Statement: {statement}\n\nClassify.",
             phase="hypothetical_filter",
         )
         return result
@@ -418,7 +418,7 @@ class NewSessionWriterMixin:
                 filter_results = [self._is_factual(s["text"]) for s in statements]
             return [
                 statements[i] for i, r in enumerate(filter_results)
-                if str(r.get("type", "")).strip().upper() == "FACTUAL"
+                if str(r.get("decision", "")).strip().upper() == "STORE"
             ]
         except Exception:
             return None  # signal: fall back to full extraction in process_session
@@ -453,12 +453,12 @@ class NewSessionWriterMixin:
 
             factual_indices = [
                 i for i, r in enumerate(filter_results)
-                if str(r.get("type", "")).strip().upper() == "FACTUAL"
+                if str(r.get("decision", "")).strip().upper() == "STORE"
             ]
 
-        # ── PHASE B: all FACTUAL statements proceed directly (no trigger gate) ──
+        # ── PHASE B: all STORE statements proceed directly (no trigger gate) ──
         # statement_extractor + hypothetical_filter already guarantee these are
-        # real personal facts; a redundant gate only causes false negatives.
+        # worth storing; a redundant gate only causes false negatives.
         triggered_indices = factual_indices
         impression = self.store.get_global_impression()
 
@@ -505,11 +505,11 @@ class NewSessionWriterMixin:
             stmt_entry: Dict[str, Any] = {"statement": text, "pipeline": []}
 
             filter_result = filter_results[i]
-            stmt_type = str(filter_result.get("type", "")).strip().upper()
+            stmt_decision = str(filter_result.get("decision", "")).strip().upper()
             stmt_entry["hypothetical_filter"] = filter_result
 
             if i not in factual_indices:
-                stmt_entry["pipeline"].append(f"dropped at hypothetical_filter (type={stmt_type})")
+                stmt_entry["pipeline"].append(f"dropped at hypothetical_filter (decision={stmt_decision})")
                 statement_log.append(stmt_entry)
                 continue
 
