@@ -40,7 +40,7 @@ class NewSessionWriterMixin:
         except Exception as exc:
             return {"_error": str(exc)}
 
-    def _extract_statements(self, session_text: str) -> List[Dict[str, Any]]:
+    def _extract_statements(self, session_text: str) -> Optional[List[Dict[str, Any]]]:
         if not session_text.strip():
             return []
         result = self._safe_call_json(
@@ -48,6 +48,8 @@ class NewSessionWriterMixin:
             f"Session user turns:\n{session_text}",
             phase="statement_extraction",
         )
+        if "_error" in result:
+            return None  # API failure — caller should fall back, not treat as empty
         statements = result.get("statements", [])
         if not isinstance(statements, list):
             return []
@@ -408,6 +410,9 @@ class NewSessionWriterMixin:
             if not session_text.strip():
                 return []
             statements = self._extract_statements(session_text)
+            # None signals an API error in extraction — fall back to full re-extraction.
+            if statements is None:
+                return None
             if not statements:
                 return []
             n = len(statements)
@@ -441,7 +446,7 @@ class NewSessionWriterMixin:
             filter_results = [{"type": "FACTUAL", "reason": "pre-classified"} for _ in statements]
             factual_indices = list(range(len(statements)))
         else:
-            statements = self._extract_statements(session_text)
+            statements = self._extract_statements(session_text) or []
             n = len(statements)
 
             # ── PHASE A: classify all statements in parallel ──────────────────
