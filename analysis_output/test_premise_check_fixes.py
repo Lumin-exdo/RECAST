@@ -65,21 +65,39 @@ def extract_premise_call(trace: Dict, dim_label: str) -> Optional[Dict]:
     return None
 
 
-def format_memories_new(system_prompt_old: str) -> str:
+def build_session_maps(trace: Dict) -> Dict:
     """
-    Extract memory sections from the old system prompt and reformat them
-    with created_session info (simulated from content where available)
-    plus the new PREMISE_CHECK_PROMPT template.
+    Extract item_id → {created, staled} from the final_profile_snapshot.
+    Needed to substitute real session numbers in the replay prompts.
+    """
+    snap = trace.get("result", {}).get("final_profile_snapshot", {})
+    session_map: Dict[str, Dict] = {}
+    for item in snap.get("stale_items", []):
+        iid = item.get("item_id", "")
+        if iid:
+            session_map[iid] = {
+                "created": item.get("created_session", "?"),
+                "staled": (item.get("stale_metadata") or {}).get("stale_since_session", "?"),
+            }
+    for bucket in ("active_items", "uncertain_items"):
+        for item in snap.get(bucket, []):
+            iid = item.get("item_id", "")
+            if iid:
+                session_map.setdefault(iid, {
+                    "created": item.get("created_session", "?"),
+                    "staled": None,
+                })
+    return session_map
 
-    Since we're replaying from recorded prompts, the memories are already
-    formatted in the old style. We parse them out and rebuild with new format.
+
+def format_memories_new(system_prompt_old: str, trace: Dict) -> tuple:
     """
-    # The old format had these section headers:
-    # "Current active memories (confirmed true):\n..."
-    # "Uncertain memories (may be outdated...):\n..."
-    # "Stale memories (used to be true but has changed):\n..."
-    # and "User question: ...\n\n"
+    Parse the old-format system prompt, substitute real session numbers from the
+    profile snapshot, and rebuild using the current PREMISE_CHECK_PROMPT template.
+    """
     import re
+
+    session_map = build_session_maps(trace)
 
     query_match = re.search(r"User question: (.+?)(?:\n\nCurrent active)", system_prompt_old, re.DOTALL)
     query_text = query_match.group(1).strip() if query_match else ""
@@ -101,32 +119,45 @@ def format_memories_new(system_prompt_old: str) -> str:
     uncertain_raw = uncertain_match.group(1).strip() if uncertain_match else "(none)"
     stale_raw = stale_match.group(1).strip() if stale_match else "(none)"
 
-    # Reformat active: add dummy session marker "(session ?)" since we don't have it in old traces
-    # Real runs will have created_session from MemoryItem; in replay we mark as (session ?)
+    # Active: insert (session N) from snapshot; fall back to (session ?) if not found
     active_lines = []
     for line in active_raw.splitlines():
         line = line.strip()
-        if line and not line.startswith("(none"):
-            # Insert session placeholder after the item id bracket
-            active_lines.append(re.sub(r"^(- \[\S+\])", r"\1 (session ?)", line))
-        elif line:
-            active_lines.append(line)
+        if not line:
+            continue
+        id_match = re.match(r"- \[(m_\d+)\]", line)
+        if id_match:
+            iid = id_match.group(1)
+            cs = session_map.get(iid, {}).get("created", "?")
+            line = re.sub(r"^(- \[m_\d+\])", rf"\1 (session {cs})", line)
+        else:
+            line = re.sub(r"^(- \[\S+\])", r"\1 (session ?)", line)
+        active_lines.append(line)
     active_new = "\n".join(active_lines) if active_lines else "(none)"
 
-    # Reformat stale: transform old "(stale since session N: reason)" to
-    # "(created session ?, staled session N: reason)"
+    # Stale: replace "(stale since session N: ...)" or "(stale: ...)" with
+    # "(created session C, staled session S: ...)" using snapshot data
     stale_lines = []
     for line in stale_raw.splitlines():
         line = line.strip()
-        if line and not line.startswith("(none"):
+        if not line:
+            continue
+        id_match = re.match(r"- \[(m_\d+)\]", line)
+        if id_match:
+            iid = id_match.group(1)
+            cs = session_map.get(iid, {}).get("created", "?")
+            ss = session_map.get(iid, {}).get("staled", "?")
+            line = re.sub(r"\(stale since session \d+: ", f"(created session {cs}, staled session {ss}: ", line)
+            line = re.sub(r"\(stale: ", f"(created session {cs}, staled session {ss}: ", line)
+            line = re.sub(r"\(stale\b", f"(created session {cs}, staled session {ss}", line)
+        else:
+            # No item id — use stale-since number if present
             line = re.sub(
                 r"\(stale since session (\d+): ",
                 r"(created session ?, staled session \1: ",
-                line
+                line,
             )
-            stale_lines.append(line)
-        elif line:
-            stale_lines.append(line)
+        stale_lines.append(line)
     stale_new = "\n".join(stale_lines) if stale_lines else "(none)"
 
     new_prompt = (
@@ -248,9 +279,9 @@ def main():
         provider = call.get("provider", "openai")
         model = call.get("model", "deepseek-chat")
 
-        # Build new prompt
+        # Build new prompt with real session numbers from profile snapshot
         try:
-            new_prompt, query_text = format_memories_new(old_system_prompt)
+            new_prompt, query_text = format_memories_new(old_system_prompt, trace)
         except Exception as e:
             print(f"  SKIP: prompt parsing error: {e}")
             continue
