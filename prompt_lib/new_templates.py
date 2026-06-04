@@ -373,13 +373,13 @@ PREMISE_CHECK_PROMPT = """Check whether a user's question contains implicit assu
 
 User question: {query_text}
 
-Current active memories (confirmed true):
+Current active memories (confirmed true; session number = when recorded):
 {active_memories}
 
 Uncertain memories (may be outdated — reliability reduced but not yet confirmed stale):
 {uncertain_memories}
 
-Stale memories (used to be true but has changed):
+Stale memories (used to be true but has since changed; format: created session C → staled session S):
 {stale_memories}
 
 Identify what the question implicitly assumes about the user's current state. Then check whether those assumptions are supported, contradicted, or unknown given the memory state.
@@ -413,6 +413,16 @@ Rules:
   the assumption cannot be safely confirmed if the relevant memory is flagged as unreliable.
   Example: if question assumes "user is sole caregiver" and uncertain memory says "close with supportive brother",
   that uncertain evidence undermines the "only one available" assumption → premise_safe=false.
+- ALSO set premise_safe=false when two ACTIVE memories imply mutually exclusive states on the
+  SAME life dimension (relationship/companionship, employment, location, health status), AND the
+  query's assumption relies on one side of the conflict. Use the session number as a tiebreaker:
+  the higher-session active memory reflects more recently recorded information — treat it as the
+  current state. Only flag genuine mutual exclusivity — states that CANNOT both be simultaneously
+  true for this user right now. Unrelated dimensions do not count.
+  Example: active "employed at a software company (session 12)" + active "started a year-long
+  sabbatical to write a novel (session 19)" → mutually exclusive on employment dimension → query
+  that assumes ongoing employment is unsafe; session 19 memory takes precedence.
+  Correction should name both conflicting facts and identify which (higher session) appears current.
 - premise_safe=false with soft correction (uncertain, not stale) should say:
   "We're no longer certain that [old belief] is still true. [Helpful context on why]."
 - Trace indirect assumptions: if the question assumes X, and X depends on Y, and Y is stale/uncertain → unsafe
@@ -429,6 +439,18 @@ Rules:
       Do NOT invent a reason.
   (5) NEVER echo stale_reason text verbatim into correction.
 - If no relevant memories exist at all, premise_safe=true (we don't know enough to say it's unsafe)
+- Scrutinize the stale_reason before including a memory in outdated_facts: only include it if
+  the stale_reason cites DIRECT evidence of reversal (an explicit new statement that undoes the
+  memory's content, or the user directly stating the situation has ended). If the stale_reason
+  is based on indirect inference — a personality trait implying the person "would not accept" a
+  condition, or concurrent behavior implying a situation "must have" resolved — treat the stale
+  status as uncertain. In that case, do not assert the memory as definitively past; instead,
+  reflect the ambiguity in the correction. Pay particular attention to stale memories whose
+  content describes a formal obligation, institutional constraint, or event-driven outcome:
+  those require explicit reversal evidence, not inference.
+- Use the session gap (stale session − created session) as a signal: a memory staled within
+  1–2 sessions of creation is suspicious — the staling may reflect a premature inference rather
+  than a genuine reversal. Apply extra scrutiny to the stale_reason in those cases.
 
 CLOSING DEPENDENCY CHECK (mandatory — apply after populating outdated_facts):
 After identifying all presuppositions and populating outdated_facts, perform this

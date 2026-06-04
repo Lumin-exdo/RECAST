@@ -21,26 +21,27 @@ class NewQueryEngineMixin:
         except Exception as exc:
             return {"_error": str(exc)}
 
-    def _retrieve_for_query(self, query_text: str) -> Dict[str, List[MemoryItem]]:
+    def _retrieve_for_query(self, query_text: str, *, top_k: Optional[int] = None) -> Dict[str, List[MemoryItem]]:
         cfg = getattr(self, "thresholds", None)
-        top_k = getattr(cfg, "retrieval_top_k", 8) if cfg else 8
+        default_k = getattr(cfg, "retrieval_top_k", 8) if cfg else 8
+        k = top_k if top_k is not None else default_k
 
         active = self.store.search_by_embedding(
             query_text=query_text,
             embedding=self.embedding,
-            top_k=top_k,
+            top_k=k,
             status_filter=["active"],
         )
         uncertain = self.store.search_by_embedding(
             query_text=query_text,
             embedding=self.embedding,
-            top_k=top_k,
+            top_k=k,
             status_filter=["uncertain"],
         )
         stale = self.store.search_by_embedding(
             query_text=query_text,
             embedding=self.embedding,
-            top_k=top_k,
+            top_k=k,
             status_filter=["stale"],
         )
         return {"active": active, "uncertain": uncertain, "stale": stale}
@@ -54,10 +55,16 @@ class NewQueryEngineMixin:
         *,
         query_label: str = "",
     ) -> Dict[str, Any]:
-        active_text = "\n".join(f"- [{item.item_id}] {item.content}" for item in active_items) or "(none)"
+        active_text = "\n".join(
+            f"- [{item.item_id}] (session {item.created_session}) {item.content}"
+            for item in active_items
+        ) or "(none)"
         uncertain_text = "\n".join(f"- [{item.item_id}] {item.content}" for item in uncertain_items) or "(none)"
         stale_text = "\n".join(
-            f"- [{item.item_id}] {item.content} (stale since session {item.stale_metadata.stale_since_session if item.stale_metadata else '?'}: {item.stale_metadata.stale_reason if item.stale_metadata else 'unknown'})"
+            f"- [{item.item_id}] {item.content} "
+            f"(created session {item.created_session}, "
+            f"staled session {item.stale_metadata.stale_since_session if item.stale_metadata else '?'}: "
+            f"{item.stale_metadata.stale_reason if item.stale_metadata else 'unknown'})"
             for item in stale_items
         ) or "(none)"
 
@@ -81,11 +88,18 @@ class NewQueryEngineMixin:
         *,
         query_label: str = "",
     ) -> Dict[str, Any]:
+        premise_safe = bool(premise_result.get("premise_safe", True))
+        correction = str(premise_result.get("correction", "")).strip()
+
         usable_active = premise_result.get("usable_active_facts", [])
         if usable_active:
             active_facts_text = "\n".join(f"- {f}" for f in usable_active)
-        else:
+        elif premise_safe:
             active_facts_text = "\n".join(f"- {item.content}" for item in active_items) or "(none)"
+        else:
+            # Falling back to all active_items when premise is unsafe risks surfacing memories
+            # that support the outdated state alongside the correction, causing it to be ignored.
+            active_facts_text = "(no unambiguously current facts identified — see correction above)"
 
         uncertain_facts_text = "\n".join(f"- {item.content} (uncertain)" for item in uncertain_items) or "(none)"
 
@@ -98,11 +112,20 @@ class NewQueryEngineMixin:
                 for item in stale_items
             ) or "(none)"
 
-        premise_safe = bool(premise_result.get("premise_safe", True))
-        correction = str(premise_result.get("correction", "")).strip()
+        # Place correction prominently before memory sections so it is not diluted.
+        if not premise_safe and correction:
+            correction_header = (
+                "\n⚠️ CURRENT REALITY — this supersedes any conflicting memory or query assumption shown below:\n"
+                f"{correction}\n"
+                "The query may embed an outdated assumption. Redirect your answer to fit the corrected "
+                "state above — do not answer as though the old state is still true.\n"
+            )
+        else:
+            correction_header = ""
 
         prompt = (
             ANSWER_GENERATION_PROMPT
+            .replace("{correction_header}", correction_header)
             .replace("{query_text}", query_text)
             .replace("{active_facts}", active_facts_text)
             .replace("{uncertain_facts}", uncertain_facts_text)
@@ -114,7 +137,7 @@ class NewQueryEngineMixin:
         return self._safe_call_json_q(prompt, "Generate answer.", phase="answer_generation", query_label=query_label)
 
     def answer_query(self, *, query_label: str, query_text: str) -> Dict[str, Any]:
-        retrieved = self._retrieve_for_query(query_text)
+        retrieved = self._retrieve_for_query(query_text, top_k=12)
         active_items = retrieved["active"]
         uncertain_items = retrieved["uncertain"]
         stale_items = retrieved["stale"]
