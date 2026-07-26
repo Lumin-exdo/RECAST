@@ -1,4 +1,5 @@
 .env	422
+.env.example	228
 .env.openrouter	402
 .gitignore	377
 CLAUDE.md	6189
