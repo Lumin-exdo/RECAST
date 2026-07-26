@@ -1,0 +1,33 @@
+# API keys — never commit
+.env
+.env.*
+
+# Run outputs (large)
+runs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+t1t2_batch_progress.log
+
+# IDE / tools
+.vscode/
+.claude/
+
+# Conversation backups (contain private data / API keys)
+codex-conversation-backups/
+
+# Model weights (download separately)
+models/
+
+
+# Data (download separately)
+data/

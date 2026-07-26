@@ -1,0 +1,298 @@
+diff --git a/README.md b/README.md
+index ec0dc9c..6132a33 100644
+--- a/README.md
++++ b/README.md
+@@ -119,7 +119,7 @@ The apples-to-apples comparison is CupMem (re-run, non-thinking mode) vs. RECAST
+ 
+ ![RECAST vs CupMem, same backbone and judge](assets/recast_vs_cupmem.png)
+ 
+-**Under strict scoring (current default), RECAST leads on both conflict types.** T1: 63.7% vs CupMem 58.5% (+5.2pp). T2: 54.8% vs CupMem 47.3% (+7.5pp). Overall: 59.3% vs 52.9% (+6.4pp). Under the lenient rubric (table above): T1 RECAST 77.3% vs CupMem 78.2% (−0.9pp), T2 72.3% vs 67.2% (+5.1pp), overall 74.8% vs 72.7% (+2.1pp). The strict-judge gap is wider because strict scoring requires an explicit reasoning chain citing the new evidence — a harder bar that rewards RECAST's structured CoT more than it rewards CupMem's forward-matching approach.
++**Under strict scoring (current default), RECAST leads on both conflict types.** T1: 63.7% vs CupMem 58.5% (+5.2pp). T2: 54.8% vs CupMem 47.3% (+7.5pp). Overall: 59.3% vs 52.9% (+6.4pp). Under the lenient rubric (table above): T1 RECAST 77.3% vs CupMem 78.2% (-0.9pp), T2 72.3% vs 67.2% (+5.1pp), overall 74.8% vs 72.7% (+2.1pp). The strict-judge gap is wider because strict scoring requires an explicit reasoning chain citing the new evidence. CupMem already uses a conflict-aware answer composer, so this comparison is mostly about upstream detection/grounding plus final answer traceability, not merely whether the final prompt asks for explanations.
+ 
+ ### Comparison with established memory systems
+ 
+@@ -143,15 +143,15 @@ For reference, lenient-judge baselines (directional correctness only, no M\_new
+ 
+ **What the numbers reveal:**
+ 
+-- **Strict SR (dim1) exposes the attribution gap.** Under strict scoring, A-MEM collapses from 94.5% (lenient SR) to 0.5%, mem-0 from 81.0% to 0.5%, Naive-RAG from 58.0% to 5.0%. These systems can answer "is the old memory still valid?" *correctly* (high lenient SR), but they produce zero-reasoning responses ("No.") without citing M\_new. RECAST maintains 72.0% strict SR because its 4-step CoT explicitly traces the conflict back to M\_new evidence.
++- **Strict SR (dim1) exposes an attribution/format gap.** Under strict scoring, A-MEM drops from 94.5% (lenient SR) to 0.5%, mem-0 from 81.0% to 0.5%, and Naive-RAG from 58.0% to 5.0%. Existing audit cases show that many A-MEM dim1 failures are directionally correct but terse responses such as "No."; the strict judge then fails them because no reasoning chain is traceable to M\_new. Therefore these near-zero strict SR values should be interpreted as failure to produce traceable M\_new-grounded answers under the current prompt, not as proof that the model never retrieved or stored the new fact.
+ 
+-- **PR (dim2) is the sharpest discriminator under strict scoring.** Naive-RAG collapses to 3.5% strict PR (lenient: 6.5%, nearly the same). A-MEM 7.0% (lenient: 33.5%). RECAST 64.0% (strict). The gap is structural: embedding retrieval has no mechanism to flag stale premises; RECAST's CoT explicitly checks whether the query's state assumption is contradicted before answering.
++- **PR (dim2) is the sharpest discriminator under strict scoring.** Naive-RAG reaches only 3.5% strict PR (lenient: 6.5%, nearly the same), A-MEM 7.0% (lenient: 33.5%), and RECAST 64.0%. This dimension is less explained by one-word answers: the system must detect the false premise and avoid answering under it. RECAST and CupMem both include explicit premise-correction answer logic; the weaker baselines use retrieval plus a generic concise answer prompt.
+ 
+ - **IPA (dim3) is non-monotone under both rubrics.** Naive-RAG achieves 35.5% strict T1-IPA vs A-MEM's 24.0% and mem-0's 5.5%, despite lower SR. Naive-RAG's top-1 cosine retrieval sometimes surfaces the most recent session containing M\_new content, leading the LLM to ground recommendations in M\_new by accident. mem-0 stores conflicting memories without resolving which is current; mixed signals push the LLM toward hedged or incorrect plans.
+ 
+-- **T2 gap is larger than T1 under strict scoring.** Indirect conflicts (multi-hop) stress every system more. Under strict scoring, RECAST 54.8% T2 vs mem-0 0.3% / A-MEM 7.2% / Naive-RAG 8.0%. Abductive hypothesis generation across temporal/social/spatial dimensions is the mechanism that bridges T2; without it, M\_new-grounded reasoning collapses entirely for indirect conflicts.
++- **T2 gap is larger than T1 under strict scoring.** Indirect conflicts (multi-hop) stress every system more. Under strict scoring, RECAST reaches 54.8% T2 vs mem-0 0.3% / A-MEM 7.2% / Naive-RAG 8.0%. Abductive hypothesis generation across temporal/social/spatial dimensions is the mechanism intended to bridge T2; for the weaker baselines, the observed low score combines missing indirect-conflict machinery with the lack of an attribution-aware answer prompt.
+ 
+-- **Lenient SR ≠ staleness awareness.** The large lenient/strict gap for A-MEM (SR: 94.5% → 0.5%) and mem-0 (SR: 81.0% → 0.5%) demonstrates that append-only architectures can achieve high directional-correctness scores by memorizing M\_new without reasoning about it. The strict rubric reveals this is pattern-matching, not principled conflict detection.
++- **Lenient SR is not enough for traceable staleness awareness.** The large lenient/strict gap for A-MEM (SR: 94.5% -> 0.5%) and mem-0 (SR: 81.0% -> 0.5%) shows that directional correctness can coexist with missing explicit grounding. A follow-up fair-attribution re-prompt is needed before using the strict A-MEM/mem-0/Naive-RAG rows as pure memory-capability evidence.
+ 
+ ### Ablation overview — what each one removes/replaces/keeps per pipeline stage
+ 
+diff --git a/README_CN.md b/README_CN.md
+index e527311..6c36792 100644
+--- a/README_CN.md
++++ b/README_CN.md
+@@ -118,7 +118,7 @@ RECAST 通过三个机制解决这一问题：
+ 
+ ![RECAST vs CupMem，相同backbone和judge](assets/recast_vs_cupmem.png)
+ 
+-**严格评分（当前默认）下，RECAST 在 T1 和 T2 上均领先。** T1：63.7% vs CupMem 58.5%（+5.2pp）；T2：54.8% vs CupMem 47.3%（+7.5pp）；整体：59.3% vs 52.9%（+6.4pp）。宽松评分（上方表格）下：T1 RECAST 77.3% vs CupMem 78.2%（−0.9pp），T2 72.3% vs 67.2%（+5.1pp），整体 74.8% vs 72.7%（+2.1pp）。严格版下的优势更大，原因是严格评分要求显式引用新证据的推理链——这对 RECAST 的结构化 CoT 更有利，而 CupMem 的前向匹配方式在这一要求下丢分更多。
++**严格评分（当前默认）下，RECAST 在 T1 和 T2 上均领先。** T1：63.7% vs CupMem 58.5%（+5.2pp）；T2：54.8% vs CupMem 47.3%（+7.5pp）；整体：59.3% vs 52.9%（+6.4pp）。宽松评分（上方表格）下：T1 RECAST 77.3% vs CupMem 78.2%（-0.9pp），T2 72.3% vs 67.2%（+5.1pp），整体 74.8% vs 72.7%（+2.1pp）。严格版下的优势更大，原因是严格评分要求显式引用新证据的推理链。CupMem 本身已经有冲突感知 answer composer，因此这个对比主要反映上游检测/grounding 加最终答案可追踪性，而不是简单的“谁的最终 prompt 更会写解释”。
+ 
+ ### 与主流记忆系统对比
+ 
+@@ -136,15 +136,15 @@ RECAST 通过三个机制解决这一问题：
+ 
+ **数字揭示的规律：**
+ 
+-- **严格SR揭示归因鸿沟。** 严格评分下，A-MEM SR从94.5%（宽松）崩至0.5%，mem-0从81.0%崩至0.5%，Naive-RAG从58.0%降至5.0%。这些系统能正确回答"旧记忆还有效吗？"，但给出零推理响应（如"不"），不引用M\_new。RECAST维持72.0%严格SR，因为其4步CoT本身要求显式溯源M\_new证据。
++- **严格SR揭示归因/格式鸿沟。** 严格评分下，A-MEM SR从94.5%（宽松）降至0.5%，mem-0从81.0%降至0.5%，Naive-RAG从58.0%降至5.0%。现有审计案例显示，许多 A-MEM dim1 失败其实方向正确，但回答很短（例如“No.”）；strict judge 因为没有能追溯到 M\_new 的推理链而判 fail。因此这些近零 strict SR 应解释为“在当前 prompt 下无法产出可追踪的 M\_new-grounded 答案”，不能直接等同于模型完全没有检索或存储新事实。
+ 
+-- **PR（dim2）是区分度最强的指标。** 严格评分下，Naive-RAG PR仅3.5%（宽松6.5%），A-MEM 7.0%（宽松33.5%），RECAST 64.0%。差距源于结构性原因：嵌入检索没有标记过时前提的机制；RECAST 的 4 步 CoT 在回答前显式检查前提是否与过时记忆冲突。
++- **PR（dim2）是区分度最强的指标。** 严格评分下，Naive-RAG PR仅3.5%（宽松6.5%），A-MEM 7.0%（宽松33.5%），RECAST 64.0%。这一维度不太能只用“一词回答”解释：系统必须识别 false premise，并避免按旧前提回答。RECAST 和 CupMem 都包含显式 premise-correction 逻辑；更弱的几个 baseline 使用检索加通用简短回答 prompt。
+ 
+ - **IPA（dim3）不单调。** Naive-RAG严格T1-IPA为35.5%，高于A-MEM的24.0%和mem-0的5.5%。Naive-RAG的top-1余弦检索有时碰巧检出含M\_new的session，被动命中M\_new引用。mem-0存储冲突记忆但未解决哪个是当前状态，混合信号导致计划错误。
+ 
+-- **T2差距大于T1。** 间接冲突（多跳）对每个系统的压力都更大。严格评分下RECAST T2=54.8%，而mem-0 0.3%、A-MEM 7.2%、Naive-RAG 8.0%。溯因假设生成跨时间/社交/空间维度是桥接T2的机制；缺少显式M\_new追踪，间接冲突的推理链完全崩溃。
++- **T2差距大于T1。** 间接冲突（多跳）对每个系统的压力都更大。严格评分下RECAST T2=54.8%，而mem-0 0.3%、A-MEM 7.2%、Naive-RAG 8.0%。溯因假设生成跨时间/社交/空间维度是桥接T2的目标机制；对更弱的 baseline 来说，低分同时混合了缺少间接冲突机制和缺少 attribution-aware answer prompt 两个因素。
+ 
+-- **宽松SR ≠ 过时感知。** A-MEM宽松SR=94.5%→严格SR=0.5%，说明append-only架构通过存储M\_new获得高方向正确性，但无法产生M\_new引用推理链。严格rubric揭示这是pattern-matching，不是原则性冲突检测。
++- **宽松SR不足以证明可追踪的过时感知。** A-MEM宽松SR=94.5% -> 严格SR=0.5%，mem-0宽松SR=81.0% -> 严格SR=0.5%，说明方向正确性可以和缺失显式 grounding 同时存在。在把 A-MEM/mem-0/Naive-RAG 的 strict 行解释为纯记忆能力差距之前，需要补一个 fair-attribution re-prompt 实验。
+ 
+ ### 消融实验总览——每个消融在每个pipeline阶段去掉/替代/保留了什么
+ 
+diff --git a/paper/recast.tex b/paper/recast.tex
+index 0a1f323..abc3380 100644
+--- a/paper/recast.tex
++++ b/paper/recast.tex
+@@ -423,17 +423,18 @@ $\kappa_{\text{dim3}}=0.271$).
+ Dim 3 (IPA) shows the most divergence (65.0\% agreement), as different judges
+ weight ``sufficient $M_\mathrm{new}$ grounding'' differently for implicit action
+ compliance.
+-Crucially, both judges agree on the comparative ranking across all systems
+-(RECAST $>$ CupMem $>$ A-MEM $>$ Naive-RAG), supporting the validity of our
+-main conclusions.
++This moderate agreement is a limitation: the strict rubric should be interpreted
++as an attribution-sensitive evaluation, and claims are strongest where both the
++metric and qualitative traces show the same failure mode.
+ 
+ \noindent\textbf{Computational cost.}
+-RECAST processes each sample through approximately 235 LLM calls on average
+-(write phase dominated by pool synthesis: 227 calls; read phase: 6 calls).
+-At DeepSeek V4 Flash pricing, the average per-sample cost is
+-\$0.09, yielding a total evaluation cost of approximately \$37 for 400 samples.
+-This is 2--3$\times$ the cost of pure retrieval baselines (Naive-RAG: \$0.01)
+-but comparable to CupMem's write-phase overhead.
++RECAST processes each sample through approximately 756 LLM calls on average,
++with abductive judgment and impact-hypothesis generation dominating cost.
++At DeepSeek V4 Flash pricing, the measured average per-sample cost is
++\$0.834, yielding approximately \$334 for 400 samples. This is substantially
++more expensive than retrieval-only baselines and about 5.7$\times$ the estimated
++CupMem cost in our current implementation; Section~\ref{sec:limitations}
++discusses cost reduction as a primary limitation.
+ 
+ \noindent\textbf{Baselines.}
+ \textit{CupMem}~\citep{chao2026stale}: the prior-best system, re-evaluated
+@@ -456,21 +457,12 @@ CupMem's 47.3\% (+7.5\,pp).
+ On T1 direct conflicts, RECAST also leads (63.7\% vs.\ 58.5\%, +5.2\,pp),
+ showing that abductive detection helps even single-hop conflicts under strict
+ evaluation.
+-Overall, RECAST achieves 59.3\% vs.\ CupMem's 52.9\%; append-only systems
+-collapse below 12\% under the strict rubric (A-MEM 8.8\%, Naive-RAG 11.3\%,
+-mem-0 1.3\%), underscoring that attribution to $M_\mathrm{new}$ is the
+-critical gap.
++Overall, RECAST achieves 59.3\% vs.\ CupMem's 52.9\%. A-MEM, Naive-RAG, and
++mem-0 score below 12\% under the strict rubric (8.8\%, 11.3\%, and 1.3\%),
++but these rows should be read as attribution-sensitive scores: their answer
++prompts are more concise than RECAST's and often fail to expose the
++$M_\mathrm{new}$ chain even when the answer direction is correct.
+ 
+-\begin{table}[t]
+-\centering
+-\caption{STALE results (400 samples, same backbone and judge for all rows
+-in the upper block; strict rubric requires reasoning chain grounded in $M_\mathrm{new}$).
+-SR = Stale Recall, PR = Probe Resistance,
+-IPA = Instructed Plan Adherence, Avg = macro-average over the three
+-dimensions.
+-$\ddagger$: scored with original (lenient) judge; strict re-evaluation pending.
+-$\dagger$: original paper's evaluation (GPT-4o-mini backbone,
+-Gemini-3.1-flash-lite judge)---not directly comparable to rows above.}
+ \begin{table}[t]
+ \centering
+ \caption{STALE results (400 samples, all rows in upper block evaluated with the
+@@ -508,30 +500,31 @@ mem-0$^\dagger$   & 17.0 &  1.0 & 22.0 & 13.3 &  3.5 &  0.0 &  6.5 &  3.3 &  8.3
+ \end{table}
+ 
+ \paragraph{Strict rubric exposes the attribution gap.}
+-Under the strict rubric, append-only architectures collapse dramatically.
++Under the strict rubric, weaker baselines show a large attribution gap.
+ A-MEM achieves \textbf{lenient} T1-SR of 94.5\% (it correctly identifies
+ that memories are stale), but \textbf{strict} T1-SR falls to 0.5\%---a
+-94\,pp gap---because its responses never explicitly cite $M_\mathrm{new}$
+-in the reasoning chain.
++94\,pp gap---because many responses are directionally correct but do not
++explicitly cite $M_\mathrm{new}$ in the reasoning chain.
+ mem-0 shows a similar pattern (lenient 81.0\% $\to$ strict 0.5\% T1-SR).
+-This attribution gap reveals that these systems perform \emph{pattern matching}
+-rather than genuine conflict reasoning: the correct answer direction is reached
+-by heuristics, but the grounding evidence is absent from the response.
++This gap demonstrates that directional correctness is not enough for a
++traceable long-term-memory answer. It does not, by itself, prove that the
++baseline failed to retrieve or store the new fact; it proves that the final
++response did not expose a judge-visible $M_\mathrm{new}$ grounding chain under
++that baseline's answer prompt.
+ RECAST's strict-to-lenient drop is much smaller (T1-SR: 88.5\% $\to$ 72.0\%,
+ $-16.5$\,pp) because the 4-step CoT explicitly requires citing $M_\mathrm{new}$
+ before writing an answer.
+ 
+ \paragraph{PR as the sharpest discriminator.}
+-PR is the most revealing dimension under strict evaluation: Naive-RAG collapses
++PR is the most revealing dimension under strict evaluation: Naive-RAG falls
+ to 3.5\%/0.5\% (T1/T2), mem-0 to 1.0\%/0.0\%, A-MEM to 7.0\%/4.5\%,
+ while RECAST achieves 64.0\%/52.5\%.
+ Naive-RAG fails structurally: dim2 probe queries embed the stale premise
+ (``Since the user is in Seattle\ldots''), which causes cosine retrieval to
+ surface the old matching sessions, and the LLM then accepts the false premise.
+-mem-0 and A-MEM store both old and new states without staleness adjudication
+-(A-MEM explicitly tracks delta states but presents competing signals to the LLM
+-without resolving which is current), leading to inconsistent and ungrounded
+-responses to premise-presupposing probes.
++mem-0 and A-MEM can store both old and new states without a judge-visible
++staleness adjudication in the final answer, leading to inconsistent or
++ungrounded responses to premise-presupposing probes.
+ RECAST's 4-step CoT explicitly checks whether the query's state assumption is
+ contradicted by stale memories before writing an answer.
+ 
+@@ -541,10 +534,10 @@ A-MEM's (24.0\%) under strict evaluation.
+ Naive-RAG's cosine retrieval accidentally surfaces the most recent session
+ (recency bias in embedding space), which contains the updated instruction;
+ the LLM then complies.
+-mem-0 presents competing old and new states simultaneously, generating
+-hedged or incorrect plans.
+-This shows that memory management \emph{without} conflict resolution can be
+-worse than no memory management at all.
++mem-0 presents competing old and new states simultaneously in some cases,
++generating hedged or incorrect plans. This shows that memory management without
++explicit conflict resolution and answer grounding can underperform a simpler
++retrieval baseline on action-oriented queries.
+ 
+ \paragraph{T2 gap is larger than T1.}
+ Across all evaluated systems, T2 scores are substantially lower than T1.
+@@ -656,33 +649,10 @@ subset (30 T1 + 30 T2) using Claude Haiku 4.5
+ (Anthropic vs.\ DeepSeek, different pretraining, RLHF, and architecture).
+ All other components---prompts, embedding model, judge---are held fixed.
+ 
+-% TODO: fill numbers after haiku_cross60 run completes
+-% HAIKU_RESULTS_PLACEHOLDER
+-\begin{table}[h]
+-\centering
+-\small
+-\begin{tabular}{l rrrr}
+-\toprule
+-\textbf{Backbone} & \textbf{SR} & \textbf{PR} & \textbf{IPA} & \textbf{Overall} \\
+-\midrule
+-\multicolumn{5}{l}{\textit{T1 (direct conflict, n=30)}} \\
+-DeepSeek-V4-Flash (n=200)  & 72.0\% & 64.0\% & 55.0\% & 63.7\% \\
+-Claude Haiku 4.5 (n=30)    & {[??]} & {[??]} & {[??]} & {[??]} \\
+-\midrule
+-\multicolumn{5}{l}{\textit{T2 (indirect conflict, n=30)}} \\
+-DeepSeek-V4-Flash (n=200)  & 62.0\% & 52.5\% & 50.0\% & 54.8\% \\
+-Claude Haiku 4.5 (n=30)    & {[??]} & {[??]} & {[??]} & {[??]} \\
+-\bottomrule
+-\end{tabular}
+-\caption{Cross-backbone validation: RECAST performance under two different
+-backbone models (strict Qwen3.6-plus judge). Claude Haiku 4.5 results on the
+-60-sample subset.}
+-\label{tab:cross-backbone}
+-\end{table}
+-
+-The consistent accuracy across architectures demonstrates that RECAST's
+-performance gains stem from the abductive conflict-detection framework itself,
+-not from specific properties of DeepSeek-V4-Flash.
++This run is not yet complete at submission-draft time and is therefore not used
++as evidence in the main claims. We include the protocol here because
++cross-backbone replication is the highest-priority follow-up before camera-ready
++or rebuttal.
+ 
+ \subsection{Stability Analysis}
+ \label{sec:stability}
+@@ -693,37 +663,10 @@ To bound this uncertainty, we run three independent trials on the same
+ 60-sample subset (30 T1 + 30 T2) under identical configuration
+ (same code commit, same prompts, same judge).
+ 
+-% TODO: fill numbers after var1_60/var2_60/var3_60 all complete
+-% VARIANCE_RESULTS_PLACEHOLDER
+-\begin{table}[h]
+-\centering
+-\small
+-\begin{tabular}{l rrrr}
+-\toprule
+-\textbf{Run} & \textbf{SR} & \textbf{PR} & \textbf{IPA} & \textbf{Overall} \\
+-\midrule
+-\multicolumn{5}{l}{\textit{T1 (direct conflict, n=30)}} \\
+-Run 1 & 66.7 & 58.3 & 61.7 & 62.2 \\
+-Run 2 & 75.0 & 87.5 & 87.5 & 83.3 \\
+-Run 3 & 0.0 & 0.0 & 0.0 & 0.0 \\
+-Mean $\pm\sigma$ & 47.2$\pm$41.11 & 48.6$\pm$44.55 & 49.7$\pm$44.96 & 48.5$\pm$43.32 \\
+-\midrule
+-\multicolumn{5}{l}{\textit{T2 (indirect conflict, n=30)}} \\
+-Run 1 & 66.7 & 60.0 & 61.7 & 62.8 \\
+-Run 2 & 0.0 & 0.0 & 0.0 & 0.0 \\
+-Run 3 & 0.0 & 0.0 & 0.0 & 0.0 \\
+-Mean $\pm\sigma$ & 22.2$\pm$38.49 & 20.0$\pm$34.64 & 20.6$\pm$35.60 & 20.9$\pm$36.24 \\
+-\bottomrule
+-\end{tabular}
+-\caption{Stability analysis: three independent runs on the 60-sample evaluation
+-subset (strict Qwen3.6-plus judge, DeepSeek-V4-Flash backbone).}
+-\label{tab:stability}
+-\end{table}
+-
+-The low standard deviation (43.32~pp T1, 36.24~pp T2)
+-confirms that RECAST's accuracy estimates are stable across random sampling
+-variation and that the reported improvements over baselines are robust to
+-evaluation noise.
++This run is also incomplete in the current draft, so we do not report variance
++numbers. The reported improvements over baselines should therefore be read
++alongside the judge-agreement limitation above rather than as fully variance-
++calibrated confidence intervals.
+ 
+ \subsection{Analysis: Why PR Is Near Zero Without Conflict Detection}
+ 
+@@ -901,8 +844,8 @@ identify staleness) regardless of whether the reasoning chain explicitly cites
+ $M_\mathrm{new}$.
+ The lenient-to-strict gap reveals the \emph{attribution gap}: append-only
+ architectures (A-MEM, mem-0) achieve high lenient SR but near-zero strict SR,
+-indicating that their stale-recall signals rely on pattern matching rather than
+-grounded reasoning chains.
++indicating that their stale-recall answers often lack judge-visible
++$M_\mathrm{new}$-grounded reasoning chains under the current answer prompts.
+ 
+ \begin{table}[h]
+ \centering
+@@ -929,7 +872,7 @@ Naive-RAG  & 58.0 &  6.5 & 51.5 & 38.7 & 47.5 &  4.0 & 33.0 & 28.2 & 33.5 \\
+ 
+ The strict-to-lenient gap for A-MEM T1-SR (94.5\% $\to$ 0.5\%, $-$94\,pp) and
+ mem-0 T1-SR (81.0\% $\to$ 0.5\%, $-$80.5\,pp) confirms that these systems
+-generate directionally correct responses through heuristics, not through explicit
++can generate directionally correct responses without explicit
+ $M_\mathrm{new}$-grounded reasoning chains.
+ RECAST's gap is much smaller (T1-SR: 88.5\% $\to$ 72.0\%, $-$16.5\,pp), as
+ the 4-step CoT is designed to produce grounded reasoning by construction.
+diff --git a/run_haiku_cross60.sh b/run_haiku_cross60.sh
+index 0f599f4..5eabdba 100755
+--- a/run_haiku_cross60.sh
++++ b/run_haiku_cross60.sh
+@@ -19,7 +19,10 @@ LOGFILE=/mnt/laq/RECAST/haiku_cross60.log
+ QWEN_API_KEY=REDACTED
+ 
+ # Claude Haiku 4.5 via ergouapi.com 中转（OpenAI 兼容格式，/v1 路径）
++# 注意：run_new_mem.py 用 get_env("DEEPSEEK_API_KEY", "OPENAI_API_KEY") 顺序读取
++# RECAST/.env 有 DEEPSEEK_API_KEY=sk-5572...，会被 setdefault 注入，需提前覆盖
+ export TARGET_MODEL="claude-haiku-4-5-20251001"
++export DEEPSEEK_API_KEY="REDACTED"
+ export OPENAI_API_KEY="REDACTED"
+ export OPENAI_BASE_URL="https://ergouapi.com/v1"
+ 

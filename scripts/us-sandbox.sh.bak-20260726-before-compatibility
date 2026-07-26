@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+  set -- /bin/bash
+fi
+
+sandbox_hostname=${SANDBOX_HOSTNAME:-us-sandbox}
+sandbox_tz=${SANDBOX_TZ:-America/Chicago}
+sandbox_lang=${SANDBOX_LANG:-C.UTF-8}
+sandbox_user=${SANDBOX_USER:-sandbox}
+sandbox_home=${SANDBOX_HOME:-/home/sandbox}
+share_host_pid=${SANDBOX_SHARE_HOST_PID:-1}
+project_root=${SANDBOX_PROJECT_ROOT:-$PWD}
+project_root=$(realpath -m "$project_root")
+extra_ro_dirs=${SANDBOX_EXTRA_RO_DIRS:-}
+extra_rw_dirs=${SANDBOX_EXTRA_RW_DIRS:-/mnt/laq/LongMemEval:/mnt/laq/MemEvolve:/mnt/laq/STALE:/mnt/laq/amem_eval:/mnt/laq/cup_mem:/mnt/laq/d215489_worktree:/mnt/laq/experiments:/mnt/laq/lightmem_repo:/mnt/laq/mem0_eval:/mnt/laq/naive_rag:/mnt/laq/recast-bench}
+claude_state_src=${SANDBOX_CLAUDE_STATE_SRC:-/mnt/laq/pjt/.claude}
+claude_config_src=${SANDBOX_CLAUDE_CONFIG_SRC:-/mnt/laq/pjt/.claude.json}
+claude_bin_src=${SANDBOX_CLAUDE_BIN_SRC:-/mnt/laq/pjt/.local/bin}
+claude_share_src=${SANDBOX_CLAUDE_SHARE_SRC:-/mnt/laq/pjt/.local/share/claude}
+venv_src=${SANDBOX_VENV_SRC:-/mnt/laq/venv}
+ssh_key_src=${SANDBOX_SSH_KEY_SRC:-/home/laq/.ssh/id_ed25519}
+ssh_pubkey_src=${SANDBOX_SSH_PUBKEY_SRC:-/home/laq/.ssh/id_ed25519.pub}
+ssh_known_hosts_src=${SANDBOX_SSH_KNOWN_HOSTS_SRC:-/home/laq/.ssh/known_hosts}
+git_config_src=${SANDBOX_GIT_CONFIG_SRC:-/mnt/laq/pjt/.gitconfig}
+claude_state_dst=${SANDBOX_CLAUDE_STATE_DST:-/home/sandbox/.claude}
+claude_config_dst=${SANDBOX_CLAUDE_CONFIG_DST:-/home/sandbox/.claude.json}
+claude_exec_dst=${SANDBOX_CLAUDE_EXEC_DST:-/home/sandbox/.local/bin/claude}
+current_uid=$(id -u)
+current_gid=$(id -g)
+
+append_env_if_set() {
+  local key=$1
+  local value=${!key-}
+  if [[ -n "${value:-}" ]]; then
+    bwrap_args+=(--setenv "$key" "$value")
+  fi
+}
+
+is_allowed_system_path() {
+  case "$1" in
+    /usr|/usr/*|/lib|/lib/*|/lib64|/lib64/*|/etc/nsswitch.conf|/etc/protocols|/etc/services|/etc/gai.conf|/etc/ssl|/etc/ssl/*|/usr/share/zoneinfo|/usr/share/zoneinfo/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_owned_by_user() {
+  [[ -e "$1" ]] && [[ "$(stat -c '%u' "$1")" == "$current_uid" ]]
+}
+
+if ! is_owned_by_user "$project_root"; then
+  printf 'refusing sandbox project root not owned by current user: %s\n' "$project_root" >&2
+  exit 1
+fi
+
+if ! is_owned_by_user "$claude_state_src"; then
+  printf 'refusing claude state dir not owned by current user: %s\n' "$claude_state_src" >&2
+  exit 1
+fi
+
+if ! is_owned_by_user "$claude_config_src"; then
+  printf 'refusing claude config not owned by current user: %s\n' "$claude_config_src" >&2
+  exit 1
+fi
+
+if ! is_owned_by_user "$claude_bin_src"; then
+  printf 'refusing claude bin dir not owned by current user: %s\n' "$claude_bin_src" >&2
+  exit 1
+fi
+
+if ! is_owned_by_user "$claude_share_src"; then
+  printf 'refusing claude share dir not owned by current user: %s\n' "$claude_share_src" >&2
+  exit 1
+fi
+
+if ! is_owned_by_user "$venv_src"; then
+  printf 'refusing venv dir not owned by current user: %s\n' "$venv_src" >&2
+  exit 1
+fi
+
+for auth_file in "$ssh_key_src" "$ssh_pubkey_src" "$ssh_known_hosts_src" "$git_config_src"; do
+  if ! is_owned_by_user "$auth_file"; then
+    printf 'refusing Git/SSH auth file not owned by current user: %s\n' "$auth_file" >&2
+    exit 1
+  fi
+done
+
+claude_real_bin=$(readlink -f "$claude_bin_src/claude")
+if ! is_owned_by_user "$claude_real_bin"; then
+  printf 'refusing claude executable not owned by current user: %s\n' "$claude_real_bin" >&2
+  exit 1
+fi
+
+tmpdir="$(mktemp -d)"
+cleanup() {
+  rm -rf "$tmpdir"
+}
+trap cleanup EXIT
+
+mkdir -p "$tmpdir/etc"
+
+cat >"$tmpdir/etc/hostname" <<EOF
+$sandbox_hostname
+EOF
+
+cat >"$tmpdir/etc/hosts" <<'EOF'
+127.0.0.1 localhost
+::1 localhost
+EOF
+
+cat >"$tmpdir/etc/resolv.conf" <<'EOF'
+nameserver 10.0.2.3
+options edns0
+EOF
+
+cat >"$tmpdir/ssh_config" <<'EOF'
+Host github.com
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+  HostKeyAlias github.com
+EOF
+
+cat >"$tmpdir/etc/os-release" <<'EOF'
+NAME="Ubuntu"
+PRETTY_NAME="Ubuntu 24.04 LTS"
+ID=ubuntu
+VERSION_ID="24.04"
+HOME_URL="https://ubuntu.com/"
+SUPPORT_URL="https://ubuntu.com/support"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+EOF
+
+cat >"$tmpdir/etc/issue" <<'EOF'
+Ubuntu 24.04 LTS \n \l
+EOF
+
+cat >"$tmpdir/etc/passwd" <<EOF
+root:x:0:0:root:/root:/bin/bash
+$sandbox_user:x:$current_uid:$current_gid:Sandbox User:$sandbox_home:/bin/bash
+EOF
+
+cat >"$tmpdir/etc/group" <<EOF
+root:x:0:
+$sandbox_user:x:$current_gid:
+EOF
+
+printf '%s\n' "$(cat /proc/sys/kernel/random/uuid | tr -d '-')" >"$tmpdir/etc/machine-id"
+
+if [[ -e /usr/share/zoneinfo/$sandbox_tz ]]; then
+  mkdir -p "$tmpdir/zoneinfo"
+else
+  sandbox_tz=UTC
+fi
+
+cwd="$PWD"
+cwd_dirs=()
+path_accum=""
+IFS='/' read -r -a cwd_parts <<<"${cwd#/}"
+for part in "${cwd_parts[@]}"; do
+  [[ -n "$part" ]] || continue
+  path_accum="$path_accum/$part"
+  cwd_dirs+=("$path_accum")
+done
+
+extra_ro_args=()
+if [[ -n "$extra_ro_dirs" ]]; then
+  IFS=':' read -r -a extra_ro_list <<<"$extra_ro_dirs"
+  for extra_dir in "${extra_ro_list[@]}"; do
+    [[ -n "$extra_dir" ]] || continue
+    if ! is_allowed_system_path "$extra_dir" && ! is_owned_by_user "$extra_dir"; then
+      printf 'refusing extra read-only path not owned by current user: %s\n' "$extra_dir" >&2
+      exit 1
+    fi
+    extra_ro_args+=(--ro-bind-try "$extra_dir" "$extra_dir")
+  done
+fi
+
+extra_rw_args=()
+if [[ -n "$extra_rw_dirs" ]]; then
+  IFS=':' read -r -a extra_rw_list <<<"$extra_rw_dirs"
+  for extra_dir in "${extra_rw_list[@]}"; do
+    [[ -n "$extra_dir" ]] || continue
+    if ! is_owned_by_user "$extra_dir"; then
+      printf 'refusing extra writable path not owned by current user: %s\n' "$extra_dir" >&2
+      exit 1
+    fi
+    extra_rw_args+=(--bind "$extra_dir" "$extra_dir")
+  done
+fi
+
+bwrap_args=(
+  --unshare-uts
+  --unshare-ipc
+  --new-session
+  --hostname "$sandbox_hostname"
+  --clearenv
+  --tmpfs /
+  --proc /proc
+  --dev /dev
+  --tmpfs /tmp
+  --tmpfs /var
+  --tmpfs /run
+  --tmpfs /home
+  --tmpfs /sys
+  --dir /usr
+  --ro-bind /usr /usr
+  --symlink usr/bin /bin
+  --symlink usr/sbin /sbin
+  --symlink usr/lib /lib
+  --symlink usr/lib64 /lib64
+  --ro-bind-try /usr/share/zoneinfo /usr/share/zoneinfo
+  --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf
+  --ro-bind-try /etc/protocols /etc/protocols
+  --ro-bind-try /etc/services /etc/services
+  --ro-bind-try /etc/gai.conf /etc/gai.conf
+  --ro-bind-try /etc/ssh /etc/ssh
+  --tmpfs /etc
+  --ro-bind-try /etc/ssl /etc/ssl
+  --ro-bind /usr/share/zoneinfo/"$sandbox_tz" /etc/localtime
+  --bind "$tmpdir/etc/hostname" /etc/hostname
+  --bind "$tmpdir/etc/hosts" /etc/hosts
+  --bind "$tmpdir/etc/resolv.conf" /etc/resolv.conf
+  --bind "$tmpdir/etc/os-release" /etc/os-release
+  --bind "$tmpdir/etc/issue" /etc/issue
+  --bind "$tmpdir/etc/passwd" /etc/passwd
+  --bind "$tmpdir/etc/group" /etc/group
+  --bind "$tmpdir/etc/machine-id" /etc/machine-id
+  --dir "$sandbox_home"
+  --dir /home/sandbox/.local
+  --dir /home/sandbox/.local/share
+  --dir /home/sandbox/.local/bin
+  --dir /home/sandbox/.ssh
+  --bind "$claude_state_src" "$claude_state_dst"
+  --bind "$claude_config_src" "$claude_config_dst"
+  --bind "$claude_real_bin" "$claude_exec_dst"
+  --ro-bind "$ssh_key_src" /home/sandbox/.ssh/id_ed25519
+  --ro-bind "$ssh_pubkey_src" /home/sandbox/.ssh/id_ed25519.pub
+  --ro-bind "$ssh_known_hosts_src" /home/sandbox/.ssh/known_hosts
+  --ro-bind "$tmpdir/ssh_config" /home/sandbox/.ssh/config
+  --ro-bind "$git_config_src" /home/sandbox/.gitconfig
+  --setenv HOME "$sandbox_home"
+  --setenv USER "$sandbox_user"
+  --setenv LOGNAME "$sandbox_user"
+  --setenv SHELL /bin/bash
+  --setenv PATH "$venv_src/bin:/home/sandbox/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  --setenv VIRTUAL_ENV "$venv_src"
+  --setenv LANG "$sandbox_lang"
+  --setenv LC_ALL "$sandbox_lang"
+  --setenv TZ "$sandbox_tz"
+  --setenv TERM "${TERM:-xterm-256color}"
+)
+
+if [[ "$share_host_pid" != 1 ]]; then
+  bwrap_args+=(--unshare-pid)
+fi
+
+append_env_if_set CLAUDE_CODE_DISABLE_AUTO_MEMORY
+append_env_if_set ANTHROPIC_MODEL
+append_env_if_set OPENAI_API_KEY
+append_env_if_set OPENAI_BASE_URL
+
+if [[ "$project_root" != "$cwd" ]]; then
+  bwrap_args+=(--bind "$project_root" "$project_root")
+fi
+
+for dir in "${cwd_dirs[@]}"; do
+  bwrap_args+=(--dir "$dir")
+done
+
+bwrap_args+=(
+  --bind "$venv_src" "$venv_src"
+  --bind "$cwd" "$cwd"
+  --chdir "$cwd"
+)
+
+bwrap_args+=("${extra_rw_args[@]}")
+bwrap_args+=("${extra_ro_args[@]}")
+
+exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-xterm-256color}" \
+  rootlesskit \
+    --copy-up=/etc \
+    --copy-up=/run \
+    --net=slirp4netns \
+    --disable-host-loopback \
+    --port-driver=none \
+    -- \
+    bwrap --unshare-user --uid "$current_uid" --gid "$current_gid" "${bwrap_args[@]}" -- "$@"

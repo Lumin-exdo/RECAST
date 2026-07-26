@@ -1,0 +1,499 @@
+{
+  "methods": {
+    "CupMem": {
+      "prompt_file": "/mnt/laq/cup_mem/prompt_lib/templates.py",
+      "prompt_excerpt": "ANSWER_COMPOSER_PROMPT = \"\"\"Compose the final answer from the query, parsed query, premise verdict, optional action readiness, constraints, and compact `canonical_answer_grounding`.\n\nOutput JSON only:\n{\n  \"answer\": \"final natural-language answer\",\n  \"brief_rationale\": \"very short explanation\"\n}\n\nAuthority order:\n1. `premise_verdict`\n2. `action_readiness_verdict` when present\n3. `canonical_answer_grounding`\n4. `constraint_set`\n\nRules:\n- Do not re-judge truth or mention internal labels such as basis, bundle, ACTIVE, STALE, UNKNOWN_CURRENT, or verdict names.\n- Use only facts in the provided grounding, corrected-current-facts, or constraints.\n- Do not revive blocked or historical old items as current grounding.\n- Use directly relevant decisive, blocker, and supporting facts when compatible; do not list nearby details that do not change the answer.\n\nAnswer shape:\n- Assumption check: briefly say whether the assumption is still safe. If the old assumption is unsafe and concrete current grounding is present, state the old assumption is no longer valid/safe and cite that current fact; do not answer only “unclear” unless no concrete current grounding is available.\n- Premise-laden content request: if the request relies on an unsafe old setup, correct that setup first and do not produce the requested template, plan, schedule, comparison, or instructions under it. Give only a short current-state-safe alternative if grounded.\n- Current action/planning decision: decide the action from current grounding. Give the safest concrete next move, and make the main reason the current condition that changes suitability, feasibility, safety, eligibility, or setup validity.\n\nFalse-premise requests:\n- If `old_premise_safe` is false or the premise status says the old setup is outdated, the first se",
+      "answer_stats": {
+        "responses": 1200,
+        "avg_words": 67.0,
+        "median_words": 65,
+        "reasoning_marker_pct": 87.6,
+        "examples": [
+          {
+            "task": "T1",
+            "uid": "d22c5f23-2f88-4c08-a74d-3653695a7eb0",
+            "dim1_response": "No, that preference is outdated. The user has at one point expressed willingness to accept high volatility for potential upside growth, so the old assumption of steady, predictable growth is no longer safe. There is no s",
+            "dim2_response": "Your stated preference for conservative investments is outdated and currently unknown. The only fact available shows you are simply exploring a conservative allocation, which is not a confirmed current preference. Theref",
+            "dim3_response": "The old planning assumption—that you have a known risk tolerance for long-term savings—is no longer safe to rely on. Your prior preferences (both conservative and high-volatility) are outdated, and no current investment "
+          },
+          {
+            "task": "T1",
+            "uid": "e51c1d33-ce6d-4168-9d82-bfc846ba88cd",
+            "dim1_response": "No, the user's learning focus no longer centers on Spanish grammar. The old assumption is outdated; the user is currently spending most of their study sessions working through Python programming exercises and small codin",
+            "dim2_response": "Your earlier focus on Spanish grammar has shifted—you're now spending most of your study sessions on Python programming exercises and small coding projects, and you're becoming curious about zero-waste living. Creating a",
+            "dim3_response": "You're already spending most of your study sessions on Python programming exercises and small coding projects, so that is what you should center your study time around this week. Continue with that focus."
+          },
+          {
+            "task": "T1",
+            "uid": "19b6da4f-f3e2-465f-8a8c-b014b4e31feb",
+            "dim1_response": "Yes, the user still generally prefers cooking their own meals rather than eating out to control the ingredients.",
+            "dim2_response": "Your current routine of eating dinner at restaurants most nights after work while trying chef recommendations means the assumption that you generally prefer cooking your own meals for ingredient control is no longer accu",
+            "dim3_response": "Your current routine is actually quite the opposite of what you described: you're already handling dinner by eating at restaurants most nights after work and trying chef recommendations. That keeps things interesting wit"
+          }
+        ]
+      },
+      "strict_accuracy": {
+        "T1": {
+          "dim1": 87.0,
+          "dim2": 87.5,
+          "dim3": 60.0,
+          "overall": 78.2
+        },
+        "T2": {
+          "dim1": 72.5,
+          "dim2": 73.0,
+          "dim3": 56.0,
+          "overall": 67.2
+        }
+      },
+      "lenient_accuracy": {}
+    },
+    "A-MEM": {
+      "prompt_file": "/mnt/laq/amem_eval/run_amem_stale.py",
+      "prompt_excerpt": "ANSWER_PROMPT = \"\"\"\\\nYou are a personal assistant with access to a user's memory profile.\nThe user's stored memories (some may be outdated) are listed below.\n\n<memories>\n{memories}\n</memories>\n\nRecent conversation context (most recent session):\n{recent_context}\n\nNow answer the following question using ONLY confirmed current facts.\nIf a memory appears outdated (contradicted by a more recent one), do NOT rely on it.\n\nQuestion: {query}\n\nRespond concisely with just the answer. Do not add disclaimers.\"\"\"\n\n\ndef load_env(path: Path) -> None:\n    if not path.exists():\n        return\n    for line in path.read_text(encoding=\"utf-8\").splitlines():\n        line = line.strip()\n        if not line or line.startswith(\"#\") or \"=\" not in line:\n            continue\n        k, v = line.split(\"=\", 1)\n        k, v = k.strip(), v.strip().strip(\"'\\\"\")\n        os.environ.setdefault(k, v)\n\n\ndef format_session(session: List[Dict]) -> str:\n    lines = []\n    for turn in session:\n        role = \"User\" if turn[\"role\"] == \"user\" else \"Assistant\"\n        lines.append(f\"{role}: {turn['content']}\")\n    return \"\\n\".join(lines)\n\n\ndef answer_with_llm(query: str, memories_text: str, recent_context: str,\n                    client, model: str, extra: dict) -> str:\n    prompt = ANSWER_PROMPT.format(\n        memories=memories_text or \"(no relevant memories found)\",\n        recent_context=recent_context or \"(none)\",\n        query=query,\n    )\n    resp = client.chat.completions.create(\n        model=model,\n        messages=[{\"role\": \"user\", \"content\": prompt}],\n        max_tokens=512,\n        **extra,\n    )\n    return resp.choices[0].message.content.strip()\n\n\ndef parse_args():\n    p = argparse.ArgumentParser()\n    p.add_argument(\"--run-name\", default=\"amem_v026\")\n    p.add_argument(\"--data-path\", default=str(DE",
+      "answer_stats": {
+        "responses": 1200,
+        "avg_words": 42.0,
+        "median_words": 33,
+        "reasoning_marker_pct": 55.5,
+        "examples": [
+          {
+            "task": "T1",
+            "uid": "7c0ae4e7-6b5a-42a2-891b-0ccf553bfe7f",
+            "dim1_response": "No.",
+            "dim2_response": "Based on the user's memory profile, there is no confirmed current information about the user being based in Seattle or needing Seattle-specific neighborhood resources. The most recent context shows the user discussing mo",
+            "dim3_response": "Based on your memories, I recommend exploring walkable, transit-friendly neighborhoods in Seattle, as you've previously compared them for car-light living. For relaxation, consider finding \"third places\" with good walkab"
+          },
+          {
+            "task": "T1",
+            "uid": "b0d43dd4-98e2-4617-a062-24edcc22a0ee",
+            "dim1_response": "No.",
+            "dim2_response": "Based on your memory profile, there are no confirmed memories indicating a current interest in or need for a quiet cafe in Capitol Hill for a meeting. Therefore, I cannot provide a recommendation.",
+            "dim3_response": "I don't have any information about your current location or the best local sights to recommend. Based on your memory profile, I know about past travel plans and interests, but no data on where you live now or what sights"
+          },
+          {
+            "task": "T1",
+            "uid": "85b27125-1627-4f27-8a84-3bd07be5189c",
+            "dim1_response": "No.",
+            "dim2_response": "Based on the user's memory profile, the only Chicago-specific information is regarding address fields (billing, tax, mailing, city). There is no confirmed current memory indicating the user resides in Chicago or needs lo",
+            "dim3_response": "Based on your memories, prioritize this week: update your address first with legal and financial records, including government and financial systems, which require a full street address. Key places to notify first are th"
+          }
+        ]
+      },
+      "strict_accuracy": {
+        "T1": {
+          "dim1": 0.5,
+          "dim2": 7.0,
+          "dim3": 24.0,
+          "overall": 10.5
+        },
+        "T2": {
+          "dim1": 1.5,
+          "dim2": 4.5,
+          "dim3": 15.5,
+          "overall": 7.2
+        }
+      },
+      "lenient_accuracy": {
+        "T1": {
+          "dim1": 94.5,
+          "dim2": 33.5,
+          "dim3": 37.5,
+          "overall": 55.2
+        },
+        "T2": {
+          "dim1": 94.5,
+          "dim2": 27.5,
+          "dim3": 34.5,
+          "overall": 52.2
+        }
+      }
+    },
+    "mem-0": {
+      "prompt_file": "/mnt/laq/mem0_eval/run_mem0_stale.py",
+      "prompt_excerpt": "ANSWER_PROMPT = \"\"\"\\\nYou are a personal assistant with access to a user's memory profile.\nThe user's stored memories (some may be outdated) are listed below.\n\n<memories>\n{memories}\n</memories>\n\nRecent conversation context (most recent session):\n{recent_context}\n\nNow answer the following question using ONLY confirmed current facts.\nIf a memory appears outdated (contradicted by a more recent one), do NOT rely on it.\n\nQuestion: {query}\n\nRespond concisely with just the answer. Do not add disclaimers.\"\"\"\n\n\ndef load_env(path: Path) -> None:\n    if not path.exists():\n        return\n    for line in path.read_text(encoding=\"utf-8\").splitlines():\n        line = line.strip()\n        if not line or line.startswith(\"#\") or \"=\" not in line:\n            continue\n        k, v = line.split(\"=\", 1)\n        k, v = k.strip(), v.strip().strip(\"'\\\"\")\n        os.environ.setdefault(k, v)\n\n\ndef format_session(session: List[Dict]) -> str:\n    lines = []\n    for turn in session:\n        role = \"User\" if turn[\"role\"] == \"user\" else \"Assistant\"\n        lines.append(f\"{role}: {turn['content']}\")\n    return \"\\n\".join(lines)\n\n\ndef build_messages_from_sessions(sessions: List[List[Dict]]) -> List[Dict]:\n    \"\"\"Flatten all sessions into a single message list for mem-0 ingestion.\"\"\"\n    messages = []\n    for i, session in enumerate(sessions):\n        for turn in session:\n            messages.append({\"role\": turn[\"role\"], \"content\": turn[\"content\"]})\n    return messages\n\n\ndef make_mem0_config(api_key: str, base_url: str, model: str, embed_path: str,\n                     no_thinking: bool, qdrant_tmpdir: str = \"\") -> Dict:\n    # extra_body is NOT supported by mem0's BaseLlmConfig; pass it only to the direct OpenAI client\n    # Use a per-sample tmpdir for Qdrant to avoid /tmp/qdrant collisions across paralle",
+      "answer_stats": {
+        "responses": 1200,
+        "avg_words": 26.0,
+        "median_words": 26,
+        "reasoning_marker_pct": 51.9,
+        "examples": [
+          {
+            "task": "T1",
+            "uid": "7c0ae4e7-6b5a-42a2-891b-0ccf553bfe7f",
+            "dim1_response": "No.",
+            "dim2_response": "I cannot answer this question. There are no memories in the user's profile indicating they have been based in Seattle for the last few years, nor any mention of Seattle at all.",
+            "dim3_response": "I'm sorry, but I don't have any information about your current location or nearby spots to relax."
+          },
+          {
+            "task": "T1",
+            "uid": "34566789-711a-4361-856e-2f758a4f685e",
+            "dim1_response": "No.",
+            "dim2_response": "Based on the user's memories, they live in an apartment near a yoga studio, prefer coffee near their office on Fridays, and have a darkroom setup. Since they have been in Seattle for years, neighborhoods like Capitol Hil",
+            "dim3_response": "Based on your profile, you could go to a café near your office for coffee on Friday, attend a yoga class at a studio near your apartment, or volunteer at the Homeless Shelter Association. The best general areas to focus "
+          },
+          {
+            "task": "T1",
+            "uid": "85b27125-1627-4f27-8a84-3bd07be5189c",
+            "dim1_response": "No.",
+            "dim2_response": "I'm unable to provide Chicago-specific local service recommendations because the user's location is not confirmed in any stored memory or recent conversation context.",
+            "dim3_response": "I don't have any information in your memory profile about your current address, recent move, or local establishment needs. Based on the memories provided (none relevant), I cannot offer specific advice."
+          }
+        ]
+      },
+      "strict_accuracy": {
+        "T1": {
+          "dim1": 0.5,
+          "dim2": 1.0,
+          "dim3": 5.5,
+          "overall": 2.3
+        },
+        "T2": {
+          "dim1": 0.5,
+          "dim2": 0.0,
+          "dim3": 0.5,
+          "overall": 0.3
+        }
+      },
+      "lenient_accuracy": {}
+    },
+    "Naive-RAG": {
+      "prompt_file": "/mnt/laq/naive_rag/run_naive_rag_stale.py",
+      "prompt_excerpt": "ANSWER_PROMPT = \"\"\"\\\nYou are a personal assistant with access to a user's memory profile.\nThe user's stored memories (retrieved by semantic similarity) are listed below.\n\n<memories>\n{memories}\n</memories>\n\nRecent conversation context (most recent session):\n{recent_context}\n\nNow answer the following question using ONLY confirmed current facts.\nIf a memory appears outdated (contradicted by a more recent one), do NOT rely on it.\n\nQuestion: {query}\n\nRespond concisely with just the answer. Do not add disclaimers.\"\"\"\n\n\ndef load_env(path: Path) -> None:\n    if not path.exists():\n        return\n    for line in path.read_text(encoding=\"utf-8\").splitlines():\n        line = line.strip()\n        if not line or line.startswith(\"#\") or \"=\" not in line:\n            continue\n        k, v = line.split(\"=\", 1)\n        k, v = k.strip(), v.strip().strip(\"'\\\"\")\n        os.environ.setdefault(k, v)\n\n\ndef format_session(session: List[Dict]) -> str:\n    lines = []\n    for turn in session:\n        role = \"User\" if turn[\"role\"] == \"user\" else \"Assistant\"\n        lines.append(f\"{role}: {turn['content']}\")\n    return \"\\n\".join(lines)\n\n\ndef cosine_similarity(a: np.ndarray, b: np.ndarray) -> np.ndarray:\n    \"\"\"Compute cosine similarity of vector a against matrix b (rows).\"\"\"\n    a_norm = a / (np.linalg.norm(a) + 1e-10)\n    b_norms = b / (np.linalg.norm(b, axis=1, keepdims=True) + 1e-10)\n    return b_norms @ a_norm\n\n\ndef answer_with_llm(query: str, memories_text: str, recent_context: str,\n                    client, model: str, extra: dict) -> str:\n    from openai import OpenAI\n    prompt = ANSWER_PROMPT.format(\n        memories=memories_text or \"(no relevant memories found)\",\n        recent_context=recent_context or \"(none)\",\n        query=query,\n    )\n    resp = client.chat.completions.create(\n     ",
+      "answer_stats": {
+        "responses": 1200,
+        "avg_words": 62.4,
+        "median_words": 43,
+        "reasoning_marker_pct": 51.8,
+        "examples": [
+          {
+            "task": "T1",
+            "uid": "1a85388f-50de-4195-b4a5-6e2b8f383023",
+            "dim1_response": "No.",
+            "dim2_response": "Based on the user's statement in Session 2, they are \"primarily based at the office during the week,\" so any weekday time when they are at the office would work to reliably catch them.",
+            "dim3_response": "Hi everyone — just a heads-up that I’ll be primarily based in the office during the weekdays this month, so the office would be the most convenient place to meet. If that works, let me know a time that’s good for you."
+          },
+          {
+            "task": "T1",
+            "uid": "85b27125-1627-4f27-8a84-3bd07be5189c",
+            "dim1_response": "No.",
+            "dim2_response": "Based on your memory profile, you live near Highbury & Islington in London, not Chicago. I cannot recommend Chicago-specific services.",
+            "dim3_response": "Prioritize updating government records first. Start with the DMV for your driver’s license, then voter registration. After that, update your bank and credit cards to reflect your Chicago street address. Then update your "
+          },
+          {
+            "task": "T1",
+            "uid": "34566789-711a-4361-856e-2f758a4f685e",
+            "dim1_response": "Yes",
+            "dim2_response": "Based on your memories, you live in Seattle and have previously enjoyed Phinney Ridge, Ravenna, and Greenwood. For day-to-day errands and routine, Phinney Ridge is best for wandering into small shops and grabbing a casua",
+            "dim3_response": "Based on your interests and recent conversations, you have enjoyed Fair Isle Brewing in Ballard for a relaxed hangout with friends, and Viadro in Fremont for coffee. For a casual group-friendly meal near Fair Isle, La Ca"
+          }
+        ]
+      },
+      "strict_accuracy": {
+        "T1": {
+          "dim1": 5.0,
+          "dim2": 3.5,
+          "dim3": 35.5,
+          "overall": 14.7
+        },
+        "T2": {
+          "dim1": 2.5,
+          "dim2": 0.5,
+          "dim3": 21.0,
+          "overall": 8.0
+        }
+      },
+      "lenient_accuracy": {}
+    }
+  },
+  "disagreement_cases": [
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "7c0ae4e7-6b5a-42a2-891b-0ccf553bfe7f",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still live in Seattle?",
+      "M_old": "I've been based in Seattle for the last few years.",
+      "M_new": "I just finished updating my address after settling into my new place in Austin, and I’m trying to get set up with the local utilities and services here.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user still lives in Seattle. M_old states 'I've been based in Seattle for the last few years', but M_new clearly states 'I just finished updating my address after settling into my new place in Austin'. Response 1 answers 'No' — a correct, unambiguous acknowledgment that the Seattle-based state is outdated. This satisfies Dimension 1’s requirement: it recognizes M_old is no longer valid.",
+      "strict_reason": "The response correctly answers 'No,' but provides zero reasoning or reference to the updated context. The rubric strictly requires that the reasoning be grounded in M_new. Without any explanation linking the conclusion to the user's recent move to Austin, it fails to satisfy condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "b0d43dd4-98e2-4617-a062-24edcc22a0ee",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, is the user still based in Seattle?",
+      "M_old": "Since I’m currently based in Seattle, I’m happy to meet at a cafe in Capitol Hill or anywhere central to keep the commute reasonable for both of us.",
+      "M_new": "I just renewed the lease on my flat for another year, even though the constant delays on the Tube's Northern Line make getting to the office every morning a complete headache.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user is still based in Seattle. M_old states they are based in Seattle; M_new contradicts this by describing a London-specific context (Tube's Northern Line, flat lease). Response 1 answers 'No', which correctly recognizes that M_old is no longer valid — it directly acknowledges the update without hedging or ambiguity. This satisfies Dimension 1’s requirement of awareness that M_old is possibly no longer valid.",
+      "strict_reason": "Step-by-step: M_new establishes the user's residence as London (implied by 'flat' and 'Tube's Northern Line'). The response correctly answers 'No', but provides zero reasoning. The rubric explicitly requires that the reasoning be grounded in M_new or a logical implication of it. A bare conclusion without an explanatory chain fails condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "85b27125-1627-4f27-8a84-3bd07be5189c",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still reside in Chicago?",
+      "M_old": "Please ensure my records show Chicago, as that is where I am residing.",
+      "M_new": "I just moved into my new place in London and I’m getting settled in.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user still resides in Chicago. M_old states 'Please ensure my records show Chicago, as that is where I am residing', but M_new clearly overrides it with 'I just moved into my new place in London'. Response 1 answers 'No' — a direct, unambiguous acknowledgment that Chicago residence is no longer valid. This satisfies Dimension 1’s requirement: detecting that M_old is possibly no longer valid. No hedging or ambiguity; correct deduction.",
+      "strict_reason": "M_new explicitly states the user moved to London. While the response correctly concludes 'No,' it provides absolutely no reasoning. The rubric strictly requires that the reasoning be grounded in M_new. Without citing the move to London or any logical implication of it, condition (2) cannot be met."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "85b27125-1627-4f27-8a84-3bd07be5189c",
+      "dimension": "dim2",
+      "query": "Since the user is residing in Chicago, can you recommend a few Chicago-specific local services (like utilities, internet providers, and nearby grocery options) they should set up this week?",
+      "M_old": "Please ensure my records show Chicago, as that is where I am residing.",
+      "M_new": "I just moved into my new place in London and I’m getting settled in.",
+      "response": "Based on the user's memory profile, the only Chicago-specific information is regarding address fields (billing, tax, mailing, city). There is no confirmed current memory indicating the user resides in Chicago or needs local services like utilities, internet providers, or grocery options. I cannot recommend such services.",
+      "lenient_reason": "Question 2 assumes the false premise that the user resides in Chicago. Response 2 rejects the premise by stating there is 'no confirmed current memory indicating the user resides in Chicago' and refuses to recommend Chicago-specific services. It does not affirm the false premise, nor does it treat Chicago as current — instead, it correctly grounds its reasoning in the *current* memory (M_new implicitly acknowledged via absence of confirmation for Chicago). While it doesn’t explicitly name London, its refusal to act on the outdated assumption constitutes detection of the trap and adherence to M_new. This meets the rubric: 'detects the trap or acknowledges the new state'.",
+      "strict_reason": "The false premise is that the user currently resides in Chicago. The response correctly rejects this premise but grounds its rejection in the absence of a Chicago memory ('no confirmed current memory indicating...') rather than the presence of M_new (the explicit move to London). It fails to connect the rejection to the updated London state, violating the strict requirement that the detection be grounded in M_new."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "35385383-7d6b-415d-9d03-4efec88263da",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still remain on an intercity train and expect to be in transit for another three hours?",
+      "M_old": "I'm currently on the intercity train and will be in transit for another three hours.",
+      "M_new": "The instructor just dimmed the lights, so I’m laying out my mat and getting ready for the first yoga flow of the evening.",
+      "response": "No.",
+      "lenient_reason": "Response 1 answers 'No' to whether the user still remains on the intercity train with three hours left. This directly contradicts M_old and aligns with M_new — the user is now in a yoga class, stationary, not in transit. The response correctly recognizes that the prior state is no longer valid. It satisfies Dimension 1’s requirement of awareness that M_old is possibly no longer valid.",
+      "strict_reason": "Step-by-step: M_new establishes the user is stationary in a yoga class, invalidating the train transit state. The response correctly answers 'No,' satisfying condition (1). However, it provides absolutely no reasoning or explanation. Condition (2) explicitly requires the reasoning to be grounded in M_new or its logical implications. Since the response lacks any reasoning chain traceable to the updated state, it fails the strict rubric."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "34566789-711a-4361-856e-2f758a4f685e",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still live in Seattle?",
+      "M_old": "I've been staying in Seattle for the past few years, so that's where I'm located.",
+      "M_new": "I’m updating my info for my new gym membership—my home base is Portland now.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user still lives in Seattle. M_old states they *had been* in Seattle, but M_new clearly updates their home base to Portland. Response 1 answers 'No' — a direct, unambiguous acknowledgment that Seattle is no longer correct. This satisfies Dimension 1’s requirement: it recognizes M_old is no longer valid.",
+      "strict_reason": "The response correctly concludes 'No,' showing recognition that M_old is outdated. However, it provides zero reasoning. The rubric strictly requires that the reasoning be grounded in M_new or its logical implications. Without citing the move to Portland or the gym membership update, it fails condition 2."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "1a85388f-50de-4195-b4a5-6e2b8f383023",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still tend to be primarily based at the office during the week?",
+      "M_old": "I'm primarily based at the office during the week, so that is where you should expect to find me.",
+      "M_new": "Lately I’m almost always working from my apartment on weekdays, so deliveries will have the best chance of reaching me there during the day.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* tends to be primarily based at the office during the week. M_new directly contradicts M_old by stating 'Lately I’m almost always working from my apartment on weekdays'. Response 1 answers 'No' — a correct, unambiguous rejection of the outdated claim in M_old. This shows awareness that M_old is no longer valid.",
+      "strict_reason": "Step-by-step: M_new explicitly states the user is almost always working from their apartment on weekdays, invalidating M_old. The response correctly answers 'No,' satisfying condition (1) by recognizing M_old is outdated. However, it provides absolutely no explanation or reference to the updated state. Condition (2) strictly requires the reasoning to be grounded in M_new or its logical implications. Since the response lacks any reasoning chain traceable to M_new, it fails condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "cafa590e-d787-4df6-9207-eb9c9e2e90c5",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still take the regional shuttle whenever they need to get into the hub?",
+      "M_old": "These days, I'm taking the regional shuttle whenever I need to get into the hub.",
+      "M_new": "Ever since I moved into the apartment above my office, I just walk downstairs and I’m at my desk in two minutes.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* takes the regional shuttle. M_old says they did; M_new states they now walk from their apartment above the office — directly invalidating the shuttle habit. Response 1 answers 'No', which correctly acknowledges that the old behavior no longer holds. This satisfies Dimension 1: it recognizes M_old is outdated.",
+      "strict_reason": "Step-by-step: M_new establishes that the user now lives in an apartment directly above their office and commutes by walking downstairs, invalidating the old shuttle habit. The target response correctly answers 'No,' satisfying condition (1) by recognizing M_old is outdated. However, the rubric strictly requires condition (2): the reasoning must be grounded in M_new. The response provides absolutely no reasoning or explanation, failing to cite or logically derive from the updated state. A correct conclusion without the required reasoning chain does not pass."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "2eaf2b38-9b67-4763-a2f0-4011d8baa26c",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still live in conditions where humidity is so constant that surfaces stay damp all the time?",
+      "M_old": "The humidity is so constant that surfaces stay damp all the time.",
+      "M_new": "Ever since the dry season settled in, the air indoors feels crisp and my wooden table has started to get those tiny static shocks when I wipe it down.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* lives in the conditions described in M_old ('humidity so constant that surfaces stay damp all the time'). M_new directly contradicts M_old by describing a dry season with crisp air and static shocks — clear evidence of low humidity. Response 1 answers 'No', correctly recognizing that M_old is no longer valid. This satisfies Dimension 1’s requirement: explicit awareness that M_old is outdated.",
+      "strict_reason": "M_new establishes a shift to a dry season with crisp air and static shocks, invalidating the constant dampness of M_old. While the response correctly answers 'No', it provides absolutely no reasoning. The rubric strictly requires that the reasoning be grounded in M_new or its logical implications. Without any explanation or reference to the updated dry conditions, it fails condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "34d402c0-5fa1-42b5-8554-e44c9c397a71",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user’s situation still involve it being unusually cold for this time of year?",
+      "M_old": "It's been unusually cold for this time of year.",
+      "M_new": "We’re under an excessive heat warning this week, and even overnight it’s been staying in the upper 80s with the AC running nonstop.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the 'unusually cold' situation still holds. M_new directly contradicts M_old by stating there is an excessive heat warning and overnight temps in the upper 80s — i.e., it is *not* cold. Response 1 answers 'No', which correctly rejects M_old as current. This shows awareness that the old state is no longer valid.",
+      "strict_reason": "M_new establishes an excessive heat warning and upper 80s temperatures, directly invalidating M_old. The response correctly answers 'No,' satisfying condition (1). However, it provides zero explanation or reference to the updated weather context, completely failing condition (2) which requires the reasoning to be explicitly grounded in M_new. A bare assertion without traceable reasoning does not pass."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "7f481d58-807e-4412-b352-a56db2fcf0fb",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user’s morning haze still usually persist until midday?",
+      "M_old": "The morning haze usually persists until midday in where I live.",
+      "M_new": "Lately when I step outside at sunrise, the sky is already clear and bright, and the air stays crisp with no haze hanging around.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the *old* statement ('morning haze usually persists until midday') still holds. Response 1 answers 'No' — a concise, unambiguous rejection of M_old’s validity. This directly reflects awareness that M_old is outdated and no longer accurate per M_new (clear sunrise, crisp air, no lingering haze). It satisfies Dimension 1’s requirement: acknowledging M_old is possibly no longer valid.",
+      "strict_reason": "M_new explicitly states that mornings are now consistently clear and bright with no haze. The response correctly answers 'No,' satisfying condition 1. However, it provides absolutely no reasoning or explanation. Condition 2 strictly requires that the reasoning be grounded in M_new or a logical implication of it. Without any stated reasoning, condition 2 cannot be met, resulting in a fail."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T1",
+      "uid": "6ff5a576-b0e1-4127-80b7-0d3466526bcc",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still have their main base set up at home for their daily tasks?",
+      "M_old": "I've got my main base set up at home, so I stay here for my daily tasks.",
+      "M_new": "I finally settled into my new desk at the office downtown, and it’s nice having a dedicated spot to handle my day-to-day work.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* has their main base at home. M_old says yes; M_new explicitly states the shift to an office downtown. Response 1 answers 'No' — a direct, unambiguous acknowledgment that the old state is no longer valid. This satisfies Dimension 1’s requirement: awareness that M_old is possibly no longer valid.",
+      "strict_reason": "M_new establishes that the user's primary workspace has shifted from home to an office downtown. The response correctly answers 'No,' satisfying condition (1) by recognizing M_old is invalid. However, the rubric strictly requires condition (2): the reasoning must be grounded in M_new. The response provides absolutely no reasoning or explanation, failing to demonstrate how it derived the conclusion from the updated state. Therefore, it does not pass."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "704cac18-885e-4437-b136-a7600650ba01",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still live in Portland?",
+      "M_old": "I’ve honestly become so accustomed to the pace of life here in Portland that I can’t imagine navigating the rhythm of a different city anymore.",
+      "M_new": "I've learned the hard way to always shake out my boots before putting them on; I found another bark scorpion hiding near the heel this morning, driven indoors by the relentless dry heat.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user still lives in Portland. Response 1 answers 'No', which directly and correctly acknowledges that M_old ('I live in Portland') is invalidated by M_new (bark scorpions + relentless dry heat → Southwest, not Portland). This shows awareness that the prior location claim is no longer valid. No hedging or ambiguity — clear, correct deduction.",
+      "strict_reason": "Step-by-step: M_new describes a dry, scorpion-prone environment typical of the American Southwest, which logically invalidates living in temperate, rainy Portland. The response correctly concludes 'No,' but provides zero reasoning. It fails condition (2) of the rubric, which explicitly requires the reasoning to be grounded in M_new or its logical implications. A bare assertion without a traceable reasoning chain does not pass."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "af880933-e948-4965-b148-bdc6eeb46dee",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still live at an altitude of about 3,800 meters?",
+      "M_old": "I’ve had to calibrate the pressure sensors again this morning because living at 3,800 meters always seems to affect the sensitivity of the readings over time.",
+      "M_new": "I’ve started timing my morning runs with the low tide; the wet, packed sand is so much better for my joints, even if the ocean breeze leaves a constant film of salt on my glasses.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user still lives at ~3,800 meters. M_old asserts residence at that altitude, but M_new describes tidal beach running — which requires coastal sea-level geography and directly contradicts high-altitude residence due to the physical impossibility of experiencing tides and salt spray at 3,800 m. Response 1 answers 'No', correctly recognizing that M_old is invalidated by M_new. This satisfies Dimension 1’s requirement: explicit awareness that M_old is no longer valid.",
+      "strict_reason": "M_new describes running on a tidal beach with ocean breeze and salt spray, which logically places the user at a coastal, sea-level location (~0m), directly contradicting the 3,800m altitude in M_old. While the response correctly answers 'No,' it provides zero reasoning. The rubric strictly requires that the reasoning be grounded in M_new or its logical implications. A bare conclusion without the required explanatory chain fails condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "feef3933-9375-4fa2-ba80-ae65963e7466",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still live somewhere where coastal dampness and late-October frost regularly affect their room?",
+      "M_old": "I really need to finish insulating the window seals this weekend because the coastal dampness settles into this room as soon as the late October frost hits.",
+      "M_new": "I spent Sunday morning sweeping that endless red grit off the stucco and making sure the drip emitters for the new agave and ocotillo plants were flowing properly.",
+      "response": "No.",
+      "lenient_reason": "Response 1 answers 'No' to whether the user still lives where coastal dampness and late-October frost affect their room. This directly acknowledges that M_old is no longer valid — consistent with M_new’s desert context (red grit, stucco, agave/ocotillo, drip emitters) and the hidden logic that arid inland climate precludes coastal dampness/frost. The response is concise but unambiguously correct and grounded in the updated state.",
+      "strict_reason": "Step-by-step: M_new establishes that the user now lives in an arid desert environment (evidenced by red grit, stucco, agave, ocotillo, and drip irrigation), which logically invalidates the coastal dampness and late-October frost conditions from M_old. The response correctly answers 'No,' but provides absolutely no reasoning. The rubric strictly requires that the reasoning be grounded in M_new or its logical implications. A bare assertion without any derivation from the updated context fails condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "a6c5e096-ce2c-459a-8047-bc2a3ae5526a",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still identify as an independent contractor rather than a traditional employee?",
+      "M_old": "I finally feel like I have a handle on the workflow now that I've settled into being an independent contractor rather than answering to a department head.",
+      "M_new": "I spent my lunch break clicking through the open enrollment portal, relieved that I could finally opt into the premium dental plan and secure the company match for my retirement fund.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* identifies as an independent contractor. M_old states she 'settled into being an independent contractor', but M_new reveals she just completed open enrollment with a company-sponsored dental plan and retirement match — which, per Hidden Logic, is only possible for a W-2 employee. Response 1 answers 'No', correctly inferring that the old self-identification is no longer valid. It does not hedge, qualify, or defer; it directly contradicts M_old in light of M_new. This satisfies the Dim 1 rubric: awareness that M_old is possibly no longer valid.",
+      "strict_reason": "Step-by-step: M_new shows the user participating in employer open enrollment and securing a company match, which logically implies a shift to traditional W-2 employment, invalidating M_old. The response correctly answers 'No', but provides absolutely no reasoning. The rubric strictly requires that the reasoning be grounded in M_new or its logical implications. A bare conclusion without a traceable reasoning chain fails condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "a6c5e096-ce2c-459a-8047-bc2a3ae5526a",
+      "dimension": "dim3",
+      "query": "I’ve been putting off some pretty expensive dental work because I assumed I’d just be paying for most of it myself, but it’s starting to feel harder to justify waiting. Do you think I should still keep shopping purely on sticker price, or would it make more sense to approach this differently now?",
+      "M_old": "I finally feel like I have a handle on the workflow now that I've settled into being an independent contractor rather than answering to a department head.",
+      "M_new": "I spent my lunch break clicking through the open enrollment portal, relieved that I could finally opt into the premium dental plan and secure the company match for my retirement fund.",
+      "response": "Based on your memory profile, you previously explored a step-by-step framework for evaluating workplace benefits, including health insurance and HSAs. You should approach your dental work by applying that same framework: review your specific dental plan details, check your deductible and annual maximum, and consider using an HSA if available—rather than only comparing sticker prices.",
+      "lenient_reason": "Question 3 is an implicit task probing whether the assistant leverages the updated benefit eligibility (M_new: 'opted into the premium dental plan'). The user wonders whether to keep shopping on sticker price — implying uncertainty about coverage. Response 3 correctly pivots to using the *new* dental plan (not individual insurance), instructing her to review plan details, deductible, annual maximum, and HSA — all actions predicated on having employer-sponsored coverage. It references her prior framework (consistent with memory continuity) but applies it to the *current* context (M_new), not the outdated freelance one. This safely adheres to M_new: the recommendation only makes sense if she has a real group dental plan with those features. No vague or generic advice; action is tightly scoped to the new benefit reality.",
+      "strict_reason": "Step-by-step: M_new establishes that the user just opted into a premium dental plan via open enrollment, meaning they now have employer-sponsored coverage. The response suggests reviewing plan details and deductibles, which aligns with having insurance, but it grounds this advice in a hallucinated/irrelevant past memory ('previously explored a step-by-step framework') rather than the explicit new dental plan from M_new. The recommendation is generic and accidentally compatible, failing condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "21e80966-ebd5-4e68-a606-bfd945b19f84",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still identify as Roman Catholic and participate in Sunday morning parish services?",
+      "M_old": "I’ll have to head out a bit earlier than usual on Sunday because I’m helping coordinate the choir practice at the parish before the morning service begins.",
+      "M_new": "I really love this new app I downloaded; it gives a gentle chime for all five daily prayers and makes finding the Qibla effortless whenever I unroll my mat in a new hotel room.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user still identifies as Roman Catholic and participates in Sunday morning parish services. Response 1 answers 'No' — a direct, unambiguous rejection of the outdated identity implied by M_old. This correctly recognizes that M_new (daily five-prayer practice with Qibla app) implicitly invalidates the prior Catholic affiliation and Sunday choir coordination activity. The response does not hedge, equivocate, or appeal to ignorance — it affirms the update. Thus, it satisfies Dimension 1’s requirement: awareness that M_old is no longer valid.",
+      "strict_reason": "Step-by-step: M_new indicates the user practices Islam (five daily prayers, Qibla app), which implicitly invalidates the Catholic Sunday parish routine in M_old. The response correctly answers 'No', satisfying condition (1). However, it provides absolutely no reasoning or reference to M_new, failing condition (2) which explicitly requires the reasoning to be grounded in M_new or its logical implications. A bare conclusion without the required logical chain does not pass."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "21e80966-ebd5-4e68-a606-bfd945b19f84",
+      "dimension": "dim2",
+      "query": "Since the user is helping coordinate the choir practice at the parish before the morning service begins, can you suggest a detailed Sunday-morning schedule and a few tips for running an efficient choir rehearsal?",
+      "M_old": "I’ll have to head out a bit earlier than usual on Sunday because I’m helping coordinate the choir practice at the parish before the morning service begins.",
+      "M_new": "I really love this new app I downloaded; it gives a gentle chime for all five daily prayers and makes finding the Qibla effortless whenever I unroll my mat in a new hotel room.",
+      "response": "Based solely on the user's memory profile, there is no information about a Sunday-morning schedule or tips for running an efficient choir rehearsal. The only relevant memory mentions the user drafting a message to reschedule plans due to choir practice, but it provides no details on scheduling or rehearsal management.",
+      "lenient_reason": "Question 2 assumes the false premise that the user is still coordinating choir practice at the parish — a claim rooted entirely in M_old. Response 2 refuses to engage with the premise: it states there is 'no information' about a Sunday-morning schedule or rehearsal tips *based on the user's memory profile*, and notes only that a past memory mentioned drafting a rescheduling message — but crucially, it does *not* affirm or operationalize the choir premise. While it doesn’t explicitly state 'that premise contradicts your current practice', its refusal to build upon the false assumption — combined with grounding its answer strictly in what’s *actually stored* (i.e., M_new dominates the memory profile) — constitutes detection of the trap. It avoids reinforcing the outdated identity. Thus, it passes Dimension 2.",
+      "strict_reason": "Step-by-step: The question contains a false premise based on M_old (coordinating choir practice at a parish). M_new establishes an Islamic prayer routine, which implicitly invalidates the Catholic parish premise. The response fails to detect this false premise. Instead, it claims ignorance and hallucinates an unrelated memory ('drafting a message to reschedule plans due to choir practice') that is not in the provided context. It neither rejects the premise nor grounds its response in M_new."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "5e995eb5-9903-487d-a195-836be28471a4",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still have a few-generations-old machine that lacks the computing power needed for high-intensity applications?",
+      "M_old": "I'm working with a machine that's a few generations old, so it lacks the computing power needed for high-intensity applications.",
+      "M_new": "I’ve started doing multi-angle 4K video edits with stacked effects, and the timeline stays smooth even when I’m scrubbing and exporting in the background.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* has the old machine described in M_old. Response 1 answers 'No', which correctly recognizes that M_old is outdated — directly contradicting the outdated claim and implying awareness of the updated capability evidenced by smooth multi-angle 4K editing with stacked effects and background export. This satisfies Dim 1: it rejects the validity of M_old.",
+      "strict_reason": "The response correctly answers 'No,' which satisfies condition (1) by recognizing M_old is outdated. However, it provides absolutely no explanation or justification. The rubric strictly requires condition (2): 'The reasoning is grounded in M_new or a logically valid implication of M_new.' Without any stated reasoning chain, the response fails to meet the mandatory criteria for a pass."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "50a64d0c-a3a5-45c1-90ab-80a465ff58e9",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still usually see their friends twice a week and keep two nights open for them?",
+      "M_old": "I usually see my friends twice a week, so I keep those nights open for them.",
+      "M_new": "I’ve started a night-shift rotation, so most weeks I’m only free for one evening out.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* maintains the twice-weekly friend schedule described in M_old. Response 1 answers 'No' — a correct, unambiguous rejection of M_old’s validity. This directly acknowledges that the old pattern no longer holds, aligning with M_new (night-shift → only one evening free). No hedging or ambiguity; it correctly infers change.",
+      "strict_reason": "M_new explicitly states the user has started a night-shift rotation and is only free for one evening out per week, invalidating the twice-weekly schedule. The response correctly answers 'No,' but provides absolutely no reasoning. The rubric strictly requires that the reasoning be grounded in M_new or its logical implications. A bare conclusion without any derivation from the updated state fails condition (2)."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "50a64d0c-a3a5-45c1-90ab-80a465ff58e9",
+      "dimension": "dim2",
+      "query": "Since the user usually sees their friends twice a week and keeps those nights open, can you suggest a good plan for how they should schedule two friend meetups every week (including what to do on each of those two nights)?",
+      "M_old": "I usually see my friends twice a week, so I keep those nights open for them.",
+      "M_new": "I’ve started a night-shift rotation, so most weeks I’m only free for one evening out.",
+      "response": "Based on your memories, I don't have any confirmed current information about your current schedule, how often you see friends, or what nights you keep open. Therefore, I cannot suggest a specific plan for scheduling two friend meetups each week.",
+      "lenient_reason": "Question 2 presents a false premise rooted entirely in M_old ('since the user usually sees friends twice a week...'). Response 2 refuses to engage with the premise and cites lack of 'confirmed current information', effectively declining to endorse the outdated assumption. While it avoids explicitly stating the contradiction (e.g., 'That’s no longer accurate due to night shifts'), its refusal to generate a plan *based on the false premise* constitutes detection of the trap — it does not affirm or operationalize the invalid assumption. Per rubric, detecting the trap includes withholding compliance with the false premise, even without explicit correction.",
+      "strict_reason": "The question contains a false premise that the user still sees friends twice a week. M_new directly contradicts this by stating the user is on a night-shift rotation and only free for one evening weekly. The response claims a lack of confirmed information rather than using M_new to identify and reject the false premise. This fails condition (2) as it relies on claimed ignorance instead of grounding the rejection in the provided updated state."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "28a79760-46a6-4a4d-8942-156c9559309f",
+      "dimension": "dim1",
+      "query": "Based on the conversation history, does the user still have a fully stocked emergency bin under the stairs with fresh batteries and water?",
+      "M_old": "I make sure to keep the emergency bin under the stairs stocked with fresh batteries and water.",
+      "M_new": "After the long-haul move, I’m still waiting on my boxes to arrive, so all I have on hand right now is whatever fits in two carry-ons.",
+      "response": "No.",
+      "lenient_reason": "Question 1 explicitly asks whether the user *still* has a fully stocked emergency bin under the stairs. M_old states they 'make sure to keep' it stocked, but M_new reveals they are in transition — only two carry-ons on hand, boxes not yet arrived — meaning the bin is *not currently stocked*. Response 1 answers 'No', correctly recognizing that the old state no longer holds. This directly acknowledges the invalidation of M_old by M_new.",
+      "strict_reason": "M_new establishes that the user is in a transitional state after a move, with resources limited to two carry-ons, which invalidates the old stocked bin. While the response correctly answers 'No', it provides zero reasoning. The rubric strictly requires that the reasoning be grounded in M_new or its logical implications. Without any explanatory chain connecting the conclusion to the updated state, it fails condition 2."
+    },
+    {
+      "method": "A-MEM",
+      "task": "T2",
+      "uid": "28a79760-46a6-4a4d-8942-156c9559309f",
+      "dimension": "dim2",
+      "query": "Since the user keeps an emergency bin under the stairs stocked with fresh batteries and water, can you draft a detailed checklist and restocking schedule to keep that bin fully prepared year-round?",
+      "M_old": "I make sure to keep the emergency bin under the stairs stocked with fresh batteries and water.",
+      "M_new": "After the long-haul move, I’m still waiting on my boxes to arrive, so all I have on hand right now is whatever fits in two carry-ons.",
+      "response": "I cannot confirm that the user keeps an emergency bin under the stairs stocked with fresh batteries and water, as no such memory exists in the provided profile. The only emergency preparedness memory discusses creating a minimal kit for 2 adults in a small space, but does not mention a specific bin location or its contents. Therefore, I cannot draft the requested checklist or schedule based on confirmed facts.",
+      "lenient_reason": "Question 2 assumes as fact that the user *currently* keeps a stocked emergency bin (a false premise rooted in M_old). Response 2 rejects that assumption: it states it 'cannot confirm' the existence of such a bin, notes the absence of supporting evidence in the profile, and cites the only relevant memory — a *minimal kit for 2 adults in a small space* — which aligns with M_new’s constraint of limited belongings. Though phrased cautiously ('no such memory exists'), the response correctly identifies the premise as unsupported and refuses to act on it — thus detecting and resisting the adversarial trap.",
+      "strict_reason": "The false premise is that the user currently maintains a stocked emergency bin under the stairs. The response correctly identifies that the premise is unconfirmed, but grounds its rejection in a claim that 'no such memory exists in the provided profile' and references an unrelated memory about a 'minimal kit for 2 adults in a small space.' It completely fails to cite M_new (the long-haul move and two-carry-on limitation) as the logical basis for rejecting the premise, violating condition 2."
+    }
+  ]
+}

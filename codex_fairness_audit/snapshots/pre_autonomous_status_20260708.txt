@@ -1,0 +1,15 @@
+ M README.md
+ M README_CN.md
+ M paper/recast.tex
+ M run_haiku_cross60.sh
+?? STALE/STALE/Evaluation/judge_prompts_original_backup.py
+?? STALE/STALE/Evaluation/judge_prompts_patch2_backup.py
+?? STALE/STALE/Evaluation/judge_prompts_patch_backup.py
+?? STALE/STALE/Evaluation/judge_prompts_swap_backup.py
+?? STALE/STALE/Evaluation/judge_prompts_swap_backup2.py
+?? analysis_output_old/
+?? codex-conversation-backups/
+?? codex_fairness_audit/
+?? data-875d9a9e-4460-4558-b40f-b7a376d9fd4b-1783146165-8dbffe38-batch-0000.zip
+?? run_paper_update.sh
+?? "\344\273\273\345\212\241.md"
