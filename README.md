@@ -1,5 +1,7 @@
 # RECAST Minimal Reproduction Checkout
 
+[中文说明](README_CN.md)
+
 This directory is a minimal local checkout for reproducing the RECAST experiments. It does not depend on a machine-specific absolute pathname. The complete historical directory and original artifacts are preserved in the sibling directory `RECAST-backup-20260726-full/`.
 
 ## Layout

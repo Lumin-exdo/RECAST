@@ -1,5 +1,7 @@
 # RECAST 最小复现目录
 
+[English version](README.md)
+
 本目录是 RECAST 实验的最小本地复现 checkout。它不依赖某台机器的固定绝对路径；完整历史文件和原始结果保存在同级的 `RECAST-backup-20260726-full/` 中。
 
 ## 目录结构
