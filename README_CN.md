@@ -2,7 +2,7 @@
 
 [English version](README.md)
 
-本目录是 RECAST 实验的最小本地复现 checkout。它不依赖某台机器的固定绝对路径；完整历史文件和原始结果保存在同级的 `RECAST-backup-20260726-full/` 中。
+本目录是 RECAST 实验的最小本地复现 checkout。它不依赖某台机器的固定绝对路径。
 
 ## 审稿人复现参考
 
@@ -96,7 +96,6 @@ Strict T2 分数：无查询假说 52.3%，无印象更新 53.2%，per-session p
 - `models/all-MiniLM-L6-v2/`：本地嵌入模型
 - `core/`、`memory/`、`query/`、`retrieval/`、`store_layer/`、`write/`：核心模块
 - `EXPERIMENTS_CATALOG.md`：实验结果、配置和复现命令总目录
-- `MINIMAL_REPRODUCTION_FILE_MANIFEST.tsv`：当前 checkout 的文件清单
 
 ## 设置项目根目录
 
@@ -129,7 +128,3 @@ python codex_fairness_audit/run_fair_attribution_rerun.py --help
 ```
 
 真实实验和评分命令见 `EXPERIMENTS_CATALOG.md`。运行收费实验前，请自行配置 API 密钥、模型和预算。
-
-## Git
-
-本目录是一个重新初始化的独立 Git 仓库，当前初始提交只描述这个最小复现 checkout。完整旧仓库仍在备份目录中，未被删除。

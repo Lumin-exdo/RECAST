@@ -2,7 +2,7 @@
 
 [中文说明](README_CN.md)
 
-This directory is a minimal local checkout for reproducing the RECAST experiments. It does not depend on a machine-specific absolute pathname. The complete historical directory and original artifacts are preserved in the sibling directory `RECAST-backup-20260726-full/`.
+This directory is a minimal local checkout for reproducing the RECAST experiments. It does not depend on a machine-specific absolute pathname.
 
 ## Reviewer reproduction reference
 
@@ -96,7 +96,6 @@ The complete per-dimension tables, UID lists, output paths, lenient commands, an
 - `models/all-MiniLM-L6-v2/`: local embedding model
 - `core/`, `memory/`, `query/`, `retrieval/`, `store_layer/`, `write/`: core implementation modules
 - `EXPERIMENTS_CATALOG.md`: experiment results, configurations, and reproduction commands
-- `MINIMAL_REPRODUCTION_FILE_MANIFEST.tsv`: file manifest for this checkout
 
 ## Set the project root
 
@@ -129,7 +128,3 @@ python codex_fairness_audit/run_fair_attribution_rerun.py --help
 ```
 
 The complete commands are documented in `EXPERIMENTS_CATALOG.md`. Configure API credentials, models, and a budget before running any paid experiment.
-
-## Git
-
-This directory is an independently initialized Git repository. Its initial commit describes this minimal reproduction checkout. The complete original repository remains in the backup directory and has not been deleted.
