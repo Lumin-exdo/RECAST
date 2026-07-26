@@ -68,7 +68,7 @@ STALE benchmark 的三个评估维度（本文使用缩写）：
 
 **复现命令**（从 `$PROJECT_ROOT` 运行）���
 ```bash
-git -C RECAST checkout 16e6a32
+# 当前 checkout 已包含 dispatch-fixed 代码；无需切换旧 Git 历史。
 python -m RECAST.run_new_mem \
   --run-name fix400 \
   --n-samples 0 \
