@@ -4,7 +4,7 @@
 
 This directory is a minimal local checkout for reproducing the RECAST experiments. It does not depend on a machine-specific absolute pathname.
 
-## Reviewer reproduction reference
+## Results and reproduction
 
 Set the parent checkout once:
 
